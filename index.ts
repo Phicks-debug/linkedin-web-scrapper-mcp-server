@@ -1,6 +1,27 @@
+#!/usr/bin/env node
+
+/**
+ * LinkedIn Web Scraper MCP Server
+ * 
+ * This server provides tools for scraping LinkedIn profiles and candidate job seeker using Playwright.
+ * It exposes LinkedIn web scraping functionality as MCP tools for LLM access.
+ */
+
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  CallToolRequestSchema,
+  ErrorCode,
+  ListToolsRequestSchema,
+  McpError
+} from "@modelcontextprotocol/sdk/types.js";
 import * as fs from 'fs';
 import * as path from 'path';
 import { Browser, chromium, Page } from 'playwright';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 interface LinkedInProfileLink {
   name: string;
@@ -42,15 +63,12 @@ class LinkedInPeopleSearchScraper {
       const config = JSON.parse(configData) as Config;
 
       if (config.linkedin.email === 'your-email@example.com') {
-        console.log('⚠️  Please update config.json with your LinkedIn credentials');
-        process.exit(1);
+        throw new Error('Please update config.json with your LinkedIn credentials');
       }
 
       return config;
     } catch (error) {
-      console.error('❌ Error loading configuration:', error);
-      console.log('Please make sure config.json exists and is properly formatted');
-      process.exit(1);
+      throw new Error(`Error loading configuration: ${error}. Please make sure config.json exists and is properly formatted`);
     }
   }
 
@@ -60,7 +78,7 @@ class LinkedInPeopleSearchScraper {
     try {
       const cookies = await this.page.context().cookies();
       fs.writeFileSync(this.config.browser.cookiesPath, JSON.stringify(cookies, null, 2));
-      console.log('💾 Session cookies saved');
+      console.error('💾 Session cookies saved');
     } catch (error) {
       console.error('❌ Error saving cookies:', error);
     }
@@ -74,7 +92,7 @@ class LinkedInPeopleSearchScraper {
         const cookiesData = fs.readFileSync(this.config.browser.cookiesPath, 'utf8');
         const cookies = JSON.parse(cookiesData);
         await this.page.context().addCookies(cookies);
-        console.log('🍪 Session cookies loaded');
+        console.error('🍪 Session cookies loaded');
       }
     } catch (error) {
       console.error('❌ Error loading cookies:', error);
@@ -102,7 +120,7 @@ class LinkedInPeopleSearchScraper {
     if (!this.page) return false;
 
     try {
-      console.log('🔐 Attempting to log in to LinkedIn...');
+      console.error('🔐 Attempting to log in to LinkedIn...');
 
       // Navigate to LinkedIn login page with increased timeout and more reliable wait condition
       await this.page.goto('https://www.linkedin.com/login', {
@@ -114,12 +132,12 @@ class LinkedInPeopleSearchScraper {
       // Check if already logged in
       const currentUrl = this.page.url();
       if (currentUrl.includes('/feed/') || currentUrl.includes('/in/')) {
-        console.log('✅ Already logged in');
+        console.error('✅ Already logged in');
         return true;
       }
 
       // Wait for login form elements to be available and fill in credentials
-      console.log('⏳ Waiting for login form elements...');
+      console.error('⏳ Waiting for login form elements...');
       const emailInput = this.page.locator('input[name="session_key"]');
       const passwordInput = this.page.locator('input[name="session_password"]');
       const loginButton = this.page.locator('button[type="submit"]');
@@ -128,11 +146,11 @@ class LinkedInPeopleSearchScraper {
       await emailInput.waitFor({ state: 'visible', timeout: 10000 });
       await passwordInput.waitFor({ state: 'visible', timeout: 10000 });
 
-      console.log('📝 Filling in credentials...');
+      console.error('📝 Filling in credentials...');
       await emailInput.fill(this.config.linkedin.email);
       await passwordInput.fill(this.config.linkedin.password);
 
-      console.log('🚀 Submitting login form...');
+      console.error('🚀 Submitting login form...');
       await loginButton.click();
 
       // Wait for login to complete
@@ -143,35 +161,15 @@ class LinkedInPeopleSearchScraper {
 
       // Check for challenge page (email verification, etc.)
       if (afterLoginUrl.includes('/challenge/')) {
-        console.log('⚠️  LinkedIn security challenge detected.');
-        console.log('Please complete the challenge manually in the browser window.');
-        console.log('After completing the challenge, press Enter to continue...');
-
-        // Wait for user input
-        await new Promise(resolve => {
-          process.stdin.once('data', () => resolve(void 0));
-        });
-
-        // Wait a bit more and check the URL again
-        await this.page.waitForTimeout(3000);
-        const finalUrl = this.page.url();
-
-        if (finalUrl.includes('/feed/') || finalUrl.includes('/in/') || !finalUrl.includes('/challenge/')) {
-          console.log('✅ Login successful after challenge');
-          await this.saveCookies();
-          return true;
-        } else {
-          console.log('❌ Login failed after challenge');
-          return false;
-        }
+        throw new Error('LinkedIn security challenge detected. Please complete the challenge manually and try again.');
       }
 
       if (afterLoginUrl.includes('/feed/') || afterLoginUrl.includes('/in/')) {
-        console.log('✅ Login successful');
+        console.error('✅ Login successful');
         await this.saveCookies();
         return true;
       } else {
-        console.log('❌ Login failed. Please check your credentials.');
+        console.error('❌ Login failed. Please check your credentials.');
         return false;
       }
 
@@ -187,11 +185,11 @@ class LinkedInPeopleSearchScraper {
     }
 
     try {
-      console.log(`🔍 Searching for people with filters:`, filters);
+      console.error(`🔍 Searching for people with filters:`, filters);
 
       // Build search URL with filters
       const searchUrl = this.buildSearchUrl(filters);
-      console.log(`🌐 Navigating to: ${searchUrl}`);
+      console.error(`🌐 Navigating to: ${searchUrl}`);
 
       await this.page.goto(searchUrl, {
         waitUntil: 'domcontentloaded',
@@ -202,7 +200,7 @@ class LinkedInPeopleSearchScraper {
       // Check if we need to log in
       const loginRequired = await this.page.locator('input[name="session_key"]').isVisible();
       if (loginRequired) {
-        console.log('🔑 Login required, attempting automatic login...');
+        console.error('🔑 Login required, attempting automatic login...');
 
         const loginSuccess = await this.loginToLinkedIn();
         if (!loginSuccess) {
@@ -210,7 +208,7 @@ class LinkedInPeopleSearchScraper {
         }
 
         // Navigate to search again after login
-        console.log('🔄 Redirecting to search after login...');
+        console.error('🔄 Redirecting to search after login...');
         await this.page.goto(searchUrl, {
           waitUntil: 'domcontentloaded',
           timeout: 60000
@@ -233,7 +231,7 @@ class LinkedInPeopleSearchScraper {
     if (!this.page) return [];
 
     try {
-      console.log('🔍 Looking for search results on the page...');
+      console.error('🔍 Looking for search results on the page...');
 
       // Wait for search results to load with multiple possible selectors
       const searchSelectors = [
@@ -247,43 +245,39 @@ class LinkedInPeopleSearchScraper {
       for (const selector of searchSelectors) {
         try {
           await this.page.waitForSelector(selector, { timeout: 15000 });
-          console.log(`✅ Found search results using selector: ${selector}`);
+          console.error(`✅ Found search results using selector: ${selector}`);
           foundResults = true;
           break;
         } catch (e) {
-          console.log(`⏳ Selector "${selector}" not found, trying next...`);
-          console.log(e)
+          console.error(`⏳ Selector "${selector}" not found, trying next...`);
+          console.error(e)
         }
       }
 
       if (!foundResults) {
-        console.log('⚠️  No search results container found. Let me check what\'s on the page...');
+        console.error('⚠️  No search results container found. Let me check what\'s on the page...');
         const pageTitle = await this.page.title();
         const currentUrl = this.page.url();
-        console.log(`📄 Current page title: ${pageTitle}`);
-        console.log(`🌐 Current URL: ${currentUrl}`);
-
-        // Take a screenshot for debugging
-        await this.page.screenshot({ path: 'debug-no-results.png' });
-        console.log('📸 Screenshot saved as debug-no-results.png');
+        console.error(`📄 Current page title: ${pageTitle}`);
+        console.error(`🌐 Current URL: ${currentUrl}`);
       }
 
       const profileElements = await this.getProfileElements();
       if (profileElements.length === 0) {
-        console.log('⚠️  No profile elements found. The page structure might have changed.');
+        console.error('⚠️  No profile elements found. The page structure might have changed.');
         return [];
       }
 
-      console.log(`🎯 Processing ${profileElements.length} profile results...`);
+      console.error(`🎯 Processing ${profileElements.length} profile results...`);
       const profiles: LinkedInProfileLink[] = [];
       for (let i = 0; i < profileElements.length; i++) {
-        console.log(`   Processing profile ${i + 1}/${profileElements.length}...`);
+        console.error(`   Processing profile ${i + 1}/${profileElements.length}...`);
         const profile = await this.extractSingleProfile(profileElements[i], i);
         if (profile) {
           profiles.push(profile);
-          console.log(`   ✅ Successfully extracted: ${profile.name}`);
+          console.error(`   ✅ Successfully extracted: ${profile.name}`);
         } else {
-          console.log(`   ❌ Failed to extract profile ${i + 1}`);
+          console.error(`   ❌ Failed to extract profile ${i + 1}`);
         }
       }
 
@@ -307,7 +301,7 @@ class LinkedInPeopleSearchScraper {
     for (const selector of profileSelectors) {
       const elements = await this.page.$$(selector);
       if (elements && elements.length > 0) {
-        console.log(`📋 Found ${elements.length} profiles using selector: ${selector}`);
+        console.error(`📋 Found ${elements.length} profiles using selector: ${selector}`);
         return elements;
       }
     }
@@ -319,7 +313,7 @@ class LinkedInPeopleSearchScraper {
     try {
       const profileUrl = await this.extractProfileUrl(profileElement);
       if (!profileUrl) {
-        console.log(`⚠️  No profile URL found for result ${index + 1}`);
+        console.error(`⚠️  No profile URL found for result ${index + 1}`);
         return null;
       }
 
@@ -332,7 +326,7 @@ class LinkedInPeopleSearchScraper {
         headline: headline || undefined
       };
     } catch (error) {
-      console.log(`⚠️  Error extracting data from profile ${index + 1}:`, error);
+      console.error(`⚠️  Error extracting data from profile ${index + 1}:`, error);
       return null;
     }
   }
@@ -464,7 +458,7 @@ class LinkedInPeopleSearchScraper {
           networkValue = 'O'; // Third+ degree connections (Out of network)
           break;
         default:
-          console.log(`⚠️  Invalid network filter: ${filters.network}. Valid options: F (1st degree), S (2nd degree), O (3rd+ degree)`);
+          console.error(`⚠️  Invalid network filter: ${filters.network}. Valid options: F (1st degree), S (2nd degree), O (3rd+ degree)`);
           return;
       }
 
@@ -480,186 +474,154 @@ class LinkedInPeopleSearchScraper {
       await this.browser.close();
     }
   }
+}
 
-  displayResults(profiles: LinkedInProfileLink[]): void {
-    console.log('\n' + '='.repeat(80));
-    console.log(`� FOUND ${profiles.length} LINKEDIN PROFILES`);
-    console.log('='.repeat(80));
-
-    profiles.forEach((profile, index) => {
-      console.log(`\n${index + 1}. ${profile.name}`);
-      console.log(`   🔗 Profile: ${profile.profileUrl}`);
-      if (profile.headline) {
-        console.log(`   💼 Headline: ${profile.headline}`);
-      }
-    });
-
-    console.log('\n' + '='.repeat(80));
+/**
+ * Create an MCP server with capabilities for LinkedIn web scraping tools
+ */
+const server = new Server(
+  {
+    name: "linkedin-web-scrapper-mcp-server",
+    version: "1.0.0",
+  },
+  {
+    capabilities: {
+      tools: {},
+    },
   }
-}
+);
 
-interface ArgumentHandler {
-  handles: string[];
-  process: (filters: SearchFilters, nextArg: string | undefined) => boolean;
-}
+// Global scraper instance
+let scraper: LinkedInPeopleSearchScraper | null = null;
 
-function isValidNextArg(nextArg: string | undefined): boolean {
-  return Boolean(nextArg && !nextArg.startsWith('-'));
-}
-
-function createStringArgumentHandler(field: keyof SearchFilters, aliases: string[]): ArgumentHandler {
-  return {
-    handles: aliases,
-    process: (filters, nextArg) => {
-      if (isValidNextArg(nextArg)) {
-        (filters as any)[field] = nextArg;
-        return true;
-      }
-      return false;
-    }
-  };
-}
-
-function createHelpArgumentHandler(): ArgumentHandler {
-  return {
-    handles: ['--help', '-h'],
-    process: () => {
-      showHelp();
-      process.exit(0);
-    }
-  };
-}
-
-function createArgumentHandlers(): ArgumentHandler[] {
-  return [
-    createStringArgumentHandler('keywords', ['--keywords', '-k']),
-    createStringArgumentHandler('location', ['--location', '-l']),
-    createStringArgumentHandler('network', ['--network', '-n']),
-    createHelpArgumentHandler()
-  ];
-}
-
-function findArgumentHandler(arg: string, handlers: ArgumentHandler[]): ArgumentHandler | undefined {
-  return handlers.find(handler => handler.handles.includes(arg));
-}
-
-function handleBackwardCompatibility(filters: SearchFilters, args: string[], index: number): void {
-  const arg = args[index];
-  // If no flags are used, treat the first argument as keywords for backward compatibility
-  if (index === 0 && !arg.startsWith('-')) {
-    filters.keywords = arg;
-  }
-}
-
-function parseArguments(): SearchFilters {
-  const args = process.argv.slice(2);
-  const filters: SearchFilters = {};
-  const handlers = createArgumentHandlers();
-
-  let i = 0;
-  while (i < args.length) {
-    const arg = args[i];
-    const nextArg = args[i + 1];
-    const handler = findArgumentHandler(arg, handlers);
-
-    if (handler) {
-      const consumedNextArg = handler.process(filters, nextArg);
-      if (consumedNextArg) {
-        i += 2; // Skip both current and next argument as next was consumed
-      } else {
-        i++; // Only advance current argument
-      }
-    } else {
-      handleBackwardCompatibility(filters, args, i);
-      i++; // Advance to next argument
-    }
-  }
-
-  return filters;
-}
-
-function showHelp(): void {
-  console.log(`
-🚀 LinkedIn People Search Scraper
-
-USAGE:
-  npm run search -- [OPTIONS]
-  npm run search -- "software engineer"  # Simple keyword search (backward compatible)
-
-OPTIONS:
-  -k, --keywords <string>           Search keywords (e.g., "AI engineer", "data scientist")
-  -l, --location <string>           Location - can be a location string (e.g., "San Francisco") 
-                                    or LinkedIn geoUrn code (e.g., "105646813" for Spain)
-                                    Default: 104195383 (if no location provided)
-  -n, --network <string>            Network degree filter:
-                                      F = 1st degree connections (First-degree)
-                                      S = 2nd degree connections (Second-degree)  
-                                      O = 3rd+ degree connections (Out of network)
-  -h, --help                        Show this help message
-
-LOCATION EXAMPLES:
-  String: "San Francisco", "New York", "London"
-  GeoUrn: "105646813" (Spain), "102257491" (London Area)
-  Default: "104195383" (used when no location is specified)
-
-NETWORK EXAMPLES:
-  F = Search only 1st degree connections (people you're directly connected to)
-  S = Search only 2nd degree connections (friends of friends)
-  O = Search 3rd+ degree connections (people outside your extended network)
-
-EXAMPLES:
-  # Basic keyword search (uses default geoUrn 104195383)
-  npm run search -- "AI engineer"
-  
-  # Search with location string
-  npm run search -- --keywords "software engineer" --location "San Francisco"
-  
-  # Search with LinkedIn geoUrn location code
-  npm run search -- -k "data scientist" -l "105646813"
-  
-  # Search only 1st degree connections
-  npm run search -- -k "product manager" -n "F"
-  
-  # Search 2nd degree connections in a specific location
-  npm run search -- -k "software engineer" -l "New York" -n "S"
-  
-  # Search people outside your network
-  npm run search -- -k "AI researcher" -n "O"
-`);
-}
-
-// Main execution function
-async function main() {
-  const scraper = new LinkedInPeopleSearchScraper();
-
-  try {
-    // Parse command line arguments
-    const filters = parseArguments();
-
-    // If no filters provided, show help
-    if (Object.keys(filters).length === 0) {
-      showHelp();
-      return;
-    }
-
-    console.log('🚀 Starting LinkedIn People Search Scraper...');
-    console.log('📝 Search Filters:', JSON.stringify(filters, null, 2));
-
+/**
+ * Initialize the scraper if not already initialized
+ */
+async function initializeScraper(): Promise<LinkedInPeopleSearchScraper> {
+  if (!scraper) {
+    scraper = new LinkedInPeopleSearchScraper();
     await scraper.init();
-    const profiles = await scraper.searchPeople(filters);
+  }
+  return scraper;
+}
 
-    scraper.displayResults(profiles);
+/**
+ * Handler that lists available LinkedIn web scraping tools.
+ */
+server.setRequestHandler(ListToolsRequestSchema, async () => {
+  return {
+    tools: [
+      {
+        name: "search-linkedin-people",
+        description: "Search for LinkedIn profiles using web scraping. Returns profile names, URLs, and headlines.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            keywords: {
+              type: "string",
+              description: "Keywords to search for in profiles (e.g., 'AI engineer', 'data scientist')"
+            },
+            location: {
+              type: "string",
+              description: "Location filter - can be a location string (e.g., 'San Francisco') or LinkedIn geoUrn code (e.g., '105646813' for Spain). Default: '104195383'"
+            },
+            network: {
+              type: "string",
+              description: "Network degree filter: 'F' = 1st degree connections, 'S' = 2nd degree connections, 'O' = 3rd+ degree connections",
+              enum: ["F", "S", "O"]
+            }
+          }
+        }
+      }
+    ]
+  };
+});
 
+/**
+ * Handler for LinkedIn web scraping tools.
+ */
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  try {
+    if (request.params.name == "search-linkedin-people") {
+      const args = request.params.arguments || {};
+      const filters: SearchFilters = {
+        keywords: args.keywords as string,
+        location: args.location as string,
+        network: args.network as string
+      };
+
+      console.error('🚀 Starting LinkedIn People Search...');
+      console.error('📝 Search Filters:', JSON.stringify(filters, null, 2));
+
+      try {
+        const scraperInstance = await initializeScraper();
+        const profiles = await scraperInstance.searchPeople(filters);
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              count: profiles.length,
+              profiles: profiles,
+              filters: filters
+            }, null, 2)
+          }]
+        };
+      } catch (error: any) {
+        console.error('❌ LinkedIn search error:', error);
+        throw new McpError(
+          ErrorCode.InternalError,
+          `LinkedIn search failed: ${error.message}`
+        );
+      }
+    }
+    else {
+      throw new McpError(
+        ErrorCode.MethodNotFound,
+        `Unknown tool: ${request.params.name}`
+      );
+    }
   } catch (error) {
-    console.error('❌ Error:', error);
-  } finally {
+    if (error instanceof McpError) {
+      throw error;
+    }
+    throw new McpError(
+      ErrorCode.InternalError,
+      `Tool execution failed: ${error}`
+    );
+  }
+});
+
+/**
+ * Cleanup function to close browser when server shuts down
+ */
+process.on('SIGINT', async () => {
+  console.error('🛑 Shutting down LinkedIn Web Scraper MCP Server...');
+  if (scraper) {
     await scraper.close();
   }
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.error('🛑 Shutting down LinkedIn Web Scraper MCP Server...');
+  if (scraper) {
+    await scraper.close();
+  }
+  process.exit(0);
+});
+
+/**
+ * Start the server using stdio transport.
+ */
+async function main() {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error("🚀 LinkedIn Web Scraper MCP Server started");
 }
 
-// Run the script
-if (require.main === module) {
-  main().catch(console.error);
-}
-
-export { LinkedInPeopleSearchScraper, LinkedInProfileLink, SearchFilters };
+main().catch((error) => {
+  console.error("Server error:", error);
+  process.exit(1);
+});

@@ -1,13 +1,21 @@
 {
-  "name": "linkedin-web-scrapper",
+  "name": "linkedin-web-scrapper-mcp-server",
   "version": "1.0.0",
-  "description": "linkedin profile scrapper",
-  "main": "index.ts",
+  "description": "MCP server for LinkedIn web scraping with proper tool interface",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "linkedin-web-scrapper-mcp-server": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "tsc",
-    "start": "npm run build && node dist/index.js",
-    "dev": "ts-node index.ts",
-    "search": "npm run build && node dist/index.js",
+    "build": "tsc && node -e \"require('fs').chmodSync('dist/index.js', '755')\"",
+    "prepare": "npm run build",
+    "watch": "tsc --watch",
+    "inspector": "npx @modelcontextprotocol/inspector dist/index.js",
+    "dev": "npm run build && node dist/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -21,6 +29,7 @@
   },
   "homepage": "https://github.com/Phicks-debug/linkedin-web-scrapper#readme",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "0.6.0",
     "@playwright/test": "^1.54.2",
     "@types/node": "^24.3.0",
     "playwright": "^1.54.2",
