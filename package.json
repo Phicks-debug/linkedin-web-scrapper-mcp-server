@@ -1,0 +1,22 @@
+{
+  "name": "linkedin-web-scrapper",
+  "version": "1.0.0",
+  "description": "linkedin profile scrapper",
+  "main": "index.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Phicks-debug/linkedin-web-scrapper.git"
+  },
+  "author": "Phicks-debug",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Phicks-debug/linkedin-web-scrapper/issues"
+  },
+  "homepage": "https://github.com/Phicks-debug/linkedin-web-scrapper#readme",
+  "dependencies": {
+    "@playwright/test": "^1.54.2"
+  }
+}
