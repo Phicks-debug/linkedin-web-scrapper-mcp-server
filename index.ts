@@ -57,6 +57,25 @@ class LinkedInPeopleSearchScraper {
   }
 
   private loadConfig(): Config {
+    // Try to load from environment variables first (for Docker/containerized environments)
+    const envEmail = process.env.LINKEDIN_EMAIL;
+    const envPassword = process.env.LINKEDIN_PASSWORD;
+
+    if (envEmail && envPassword) {
+      return {
+        linkedin: {
+          email: envEmail,
+          password: envPassword
+        },
+        browser: {
+          headless: true,
+          slowMo: 1000,
+          cookiesPath: "./cookies.json"
+        }
+      };
+    }
+
+    // Fallback to config file
     const configPath = path.join(__dirname, '..', 'config.json');
     try {
       const configData = fs.readFileSync(configPath, 'utf8');
@@ -68,7 +87,7 @@ class LinkedInPeopleSearchScraper {
 
       return config;
     } catch (error) {
-      throw new Error(`Error loading configuration: ${error}. Please make sure config.json exists and is properly formatted`);
+      throw new Error(`Error loading configuration: ${error}. Please make sure config.json exists and is properly formatted, or set LINKEDIN_EMAIL and LINKEDIN_PASSWORD environment variables`);
     }
   }
 

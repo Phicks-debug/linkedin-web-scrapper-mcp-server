@@ -10,6 +10,9 @@ services:
       - TEST_KEYWORDS=ai engineer
       - TEST_LOCATION=105646813
       - TEST_NETWORK=S
+      # LinkedIn credentials for testing
+      - LINKEDIN_EMAIL=mineran2003@gmail.com
+      - LINKEDIN_PASSWORD=Nguyenthaigianghi2412
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
