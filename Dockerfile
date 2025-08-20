@@ -14,18 +14,12 @@ RUN npm ci --ignore-scripts
 COPY . .
 
 # Build TypeScript and create directories
-RUN npm run build && mkdir -p /app/data /app/logs
-
-# Install Playwright browsers
-RUN npx playwright install chromium
+RUN npm run build && mkdir -p /app/data /app/logs && npx playwright install chromium
 
 # Set environment variables
 ENV NODE_ENV=production
 
 # Set executable permissions
-RUN chmod +x dist/index.js
-
-# Expose port for MCP communication
 EXPOSE 3000
 
 # Run the MCP server
