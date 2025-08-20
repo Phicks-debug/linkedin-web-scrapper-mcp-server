@@ -14,9 +14,6 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
 
-    # Add test command to search for AI engineers
-    command: [ "node", "dist/index.js", "--test-search", "ai engineer" ]
-
     # Add memory limits for stability
     mem_limit: 2g
     memswap_limit: 2g

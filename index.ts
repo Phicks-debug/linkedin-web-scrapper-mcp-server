@@ -616,9 +616,51 @@ process.on('SIGTERM', async () => {
  * Start the server using stdio transport.
  */
 async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("🚀 LinkedIn Web Scraper MCP Server started");
+  // Check if we're in test mode (Docker environment variables set)
+  const testKeywords = process.env.TEST_KEYWORDS;
+  const testLocation = process.env.TEST_LOCATION;
+  const testNetwork = process.env.TEST_NETWORK;
+
+  if (testKeywords) {
+    console.error("🧪 Running in test mode...");
+    console.error(`Testing search for: ${testKeywords}`);
+
+    try {
+      const scraperInstance = await initializeScraper();
+      const filters: SearchFilters = {
+        keywords: testKeywords,
+        location: testLocation,
+        network: testNetwork
+      };
+
+      const profiles = await scraperInstance.searchPeople(filters);
+      console.error("✅ Test search completed successfully!");
+      console.error(`Found ${profiles.length} profiles:`);
+      profiles.forEach((profile, index) => {
+        console.error(`${index + 1}. ${profile.name} - ${profile.profileUrl}`);
+        if (profile.headline) {
+          console.error(`   ${profile.headline}`);
+        }
+      });
+
+      await scraperInstance.close();
+      console.error("🏁 Test completed, keeping container alive...");
+
+      // Keep container alive for log inspection
+      setInterval(() => {
+        console.error("📡 MCP Server ready for connections...");
+      }, 30000);
+
+    } catch (error) {
+      console.error("❌ Test search failed:", error);
+      process.exit(1);
+    }
+  } else {
+    // Normal MCP server mode
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    console.error("🚀 LinkedIn Web Scraper MCP Server started");
+  }
 }
 
 main().catch((error) => {
