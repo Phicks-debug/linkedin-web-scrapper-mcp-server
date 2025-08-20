@@ -1,33 +1,29 @@
-# Use the official Playwright image with pre-installed browsers
-FROM mcr.microsoft.com/playwright:v1.54.0-jammy
+# Use Node.js 20 LTS as base image
+FROM node:20-slim
 
 # Set working directory
 WORKDIR /app
 
-# Copy package files first (for better caching)
+# Copy package files
 COPY package*.json ./
 
-# Install Node.js dependencies
-RUN npm ci --only=production
+# Install dependencies (skip prepare script to avoid early build)
+RUN npm ci --ignore-scripts
 
-# Copy application code
+# Copy source code
 COPY . .
 
-# Create a non-root user for security
-RUN groupadd -r scraper && useradd -r -g scraper -G audio,video scraper \
-    && mkdir -p /home/scraper/Downloads \
-    && chown -R scraper:scraper /home/scraper \
-    && chown -R scraper:scraper /app
+# Build TypeScript and create directories
+RUN npm run build && mkdir -p /app/data /app/logs
 
-# Switch to non-root user
-USER scraper
+# Set environment variables
+ENV NODE_ENV=production
 
-# Set environment variables for headless operation
-ENV DISPLAY=:99
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+# Set executable permissions
+RUN chmod +x dist/index.js
 
-# Expose port if your scraper runs a web server
+# Expose port for MCP communication
 EXPOSE 3000
 
-# Default command
-CMD ["node", "index.ts"]
+# Run the MCP server
+CMD ["node", "dist/index.js"]
