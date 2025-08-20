@@ -6,9 +6,16 @@ services:
       - NODE_ENV=production
       - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
       - DISPLAY=:99
+      # Test search parameters
+      - TEST_KEYWORDS=ai engineer
+      - TEST_LOCATION=105646813
+      - TEST_NETWORK=S
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+
+    # Add test command to search for AI engineers
+    command: [ "node", "dist/index.js", "--test-search", "ai engineer" ]
 
     # Add memory limits for stability
     mem_limit: 2g
