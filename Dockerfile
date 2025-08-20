@@ -16,6 +16,9 @@ COPY . .
 # Build TypeScript and create directories
 RUN npm run build && mkdir -p /app/data /app/logs
 
+# Install Playwright browsers
+RUN npx playwright install chromium
+
 # Set environment variables
 ENV NODE_ENV=production
 
