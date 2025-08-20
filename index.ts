@@ -1,6 +1,6 @@
-import { chromium, Browser, Page } from 'playwright';
 import * as fs from 'fs';
 import * as path from 'path';
+import { Browser, chromium, Page } from 'playwright';
 
 interface LinkedInProfileLink {
   name: string;
@@ -40,12 +40,12 @@ class LinkedInPeopleSearchScraper {
     try {
       const configData = fs.readFileSync(configPath, 'utf8');
       const config = JSON.parse(configData) as Config;
-      
+
       if (config.linkedin.email === 'your-email@example.com') {
         console.log('⚠️  Please update config.json with your LinkedIn credentials');
         process.exit(1);
       }
-      
+
       return config;
     } catch (error) {
       console.error('❌ Error loading configuration:', error);
@@ -56,7 +56,7 @@ class LinkedInPeopleSearchScraper {
 
   private async saveCookies(): Promise<void> {
     if (!this.page) return;
-    
+
     try {
       const cookies = await this.page.context().cookies();
       fs.writeFileSync(this.config.browser.cookiesPath, JSON.stringify(cookies, null, 2));
@@ -68,7 +68,7 @@ class LinkedInPeopleSearchScraper {
 
   private async loadCookies(): Promise<void> {
     if (!this.page) return;
-    
+
     try {
       if (fs.existsSync(this.config.browser.cookiesPath)) {
         const cookiesData = fs.readFileSync(this.config.browser.cookiesPath, 'utf8');
@@ -82,13 +82,13 @@ class LinkedInPeopleSearchScraper {
   }
 
   async init(): Promise<void> {
-    this.browser = await chromium.launch({ 
+    this.browser = await chromium.launch({
       headless: this.config.browser.headless,
       slowMo: this.config.browser.slowMo
     });
-    
+
     this.page = await this.browser.newPage();
-    
+
     // Set user agent to avoid detection
     await this.page.setExtraHTTPHeaders({
       'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
@@ -103,10 +103,13 @@ class LinkedInPeopleSearchScraper {
 
     try {
       console.log('🔐 Attempting to log in to LinkedIn...');
-      
-      // Navigate to LinkedIn login page
-      await this.page.goto('https://www.linkedin.com/login', { waitUntil: 'networkidle' });
-      await this.page.waitForTimeout(2000);
+
+      // Navigate to LinkedIn login page with increased timeout and more reliable wait condition
+      await this.page.goto('https://www.linkedin.com/login', {
+        waitUntil: 'domcontentloaded',
+        timeout: 60000
+      });
+      await this.page.waitForTimeout(3000);
 
       // Check if already logged in
       const currentUrl = this.page.url();
@@ -115,15 +118,21 @@ class LinkedInPeopleSearchScraper {
         return true;
       }
 
-      // Fill in login credentials
+      // Wait for login form elements to be available and fill in credentials
+      console.log('⏳ Waiting for login form elements...');
       const emailInput = this.page.locator('input[name="session_key"]');
       const passwordInput = this.page.locator('input[name="session_password"]');
       const loginButton = this.page.locator('button[type="submit"]');
 
+      // Wait for form elements to be visible
+      await emailInput.waitFor({ state: 'visible', timeout: 10000 });
+      await passwordInput.waitFor({ state: 'visible', timeout: 10000 });
+
+      console.log('📝 Filling in credentials...');
       await emailInput.fill(this.config.linkedin.email);
       await passwordInput.fill(this.config.linkedin.password);
-      
-      console.log('📝 Credentials entered, submitting login form...');
+
+      console.log('🚀 Submitting login form...');
       await loginButton.click();
 
       // Wait for login to complete
@@ -131,22 +140,22 @@ class LinkedInPeopleSearchScraper {
 
       // Check for successful login
       const afterLoginUrl = this.page.url();
-      
+
       // Check for challenge page (email verification, etc.)
       if (afterLoginUrl.includes('/challenge/')) {
         console.log('⚠️  LinkedIn security challenge detected.');
         console.log('Please complete the challenge manually in the browser window.');
         console.log('After completing the challenge, press Enter to continue...');
-        
+
         // Wait for user input
         await new Promise(resolve => {
           process.stdin.once('data', () => resolve(void 0));
         });
-        
+
         // Wait a bit more and check the URL again
         await this.page.waitForTimeout(3000);
         const finalUrl = this.page.url();
-        
+
         if (finalUrl.includes('/feed/') || finalUrl.includes('/in/') || !finalUrl.includes('/challenge/')) {
           console.log('✅ Login successful after challenge');
           await this.saveCookies();
@@ -156,7 +165,7 @@ class LinkedInPeopleSearchScraper {
           return false;
         }
       }
-      
+
       if (afterLoginUrl.includes('/feed/') || afterLoginUrl.includes('/in/')) {
         console.log('✅ Login successful');
         await this.saveCookies();
@@ -179,41 +188,41 @@ class LinkedInPeopleSearchScraper {
 
     try {
       console.log(`🔍 Searching for people with filters:`, filters);
-      
+
       // Build search URL with filters
       const searchUrl = this.buildSearchUrl(filters);
       console.log(`🌐 Navigating to: ${searchUrl}`);
-      
-      await this.page.goto(searchUrl, { 
+
+      await this.page.goto(searchUrl, {
         waitUntil: 'domcontentloaded',
-        timeout: 60000 
+        timeout: 60000
       });
       await this.page.waitForTimeout(5000);
-      
+
       // Check if we need to log in
       const loginRequired = await this.page.locator('input[name="session_key"]').isVisible();
       if (loginRequired) {
         console.log('🔑 Login required, attempting automatic login...');
-        
+
         const loginSuccess = await this.loginToLinkedIn();
         if (!loginSuccess) {
           throw new Error('Failed to log in to LinkedIn');
         }
-        
+
         // Navigate to search again after login
         console.log('🔄 Redirecting to search after login...');
-        await this.page.goto(searchUrl, { 
+        await this.page.goto(searchUrl, {
           waitUntil: 'domcontentloaded',
-          timeout: 60000 
+          timeout: 60000
         });
         await this.page.waitForTimeout(5000);
       }
 
       // Extract profile links from search results
       const profiles = await this.extractProfileLinks();
-      
+
       return profiles;
-      
+
     } catch (error) {
       console.error('❌ Error during people search:', error);
       throw error;
@@ -225,15 +234,15 @@ class LinkedInPeopleSearchScraper {
 
     try {
       console.log('🔍 Looking for search results on the page...');
-      
+
       // Wait for search results to load with multiple possible selectors
       const searchSelectors = [
         '.search-results-container',
-        '.search-results__list', 
+        '.search-results__list',
         '.reusable-search__result-container',
         '[data-chameleon-result-urn]'
       ];
-      
+
       let foundResults = false;
       for (const selector of searchSelectors) {
         try {
@@ -246,19 +255,19 @@ class LinkedInPeopleSearchScraper {
           console.log(e)
         }
       }
-      
+
       if (!foundResults) {
         console.log('⚠️  No search results container found. Let me check what\'s on the page...');
         const pageTitle = await this.page.title();
         const currentUrl = this.page.url();
         console.log(`📄 Current page title: ${pageTitle}`);
         console.log(`🌐 Current URL: ${currentUrl}`);
-        
+
         // Take a screenshot for debugging
         await this.page.screenshot({ path: 'debug-no-results.png' });
         console.log('📸 Screenshot saved as debug-no-results.png');
       }
-      
+
       const profileElements = await this.getProfileElements();
       if (profileElements.length === 0) {
         console.log('⚠️  No profile elements found. The page structure might have changed.');
@@ -350,12 +359,12 @@ class LinkedInPeopleSearchScraper {
   private cleanProfileUrl(url: string): string {
     // Remove tracking parameters
     let cleanUrl = url.split('?')[0];
-    
+
     // Ensure it's a full URL
     if (!cleanUrl.startsWith('http')) {
       cleanUrl = 'https://www.linkedin.com' + cleanUrl;
     }
-    
+
     return cleanUrl;
   }
 
@@ -430,8 +439,8 @@ class LinkedInPeopleSearchScraper {
     } else {
       // It's a location string, add to keywords for simpler search
       const existingKeywords = params.get('keywords');
-      const locationKeywords = existingKeywords 
-        ? `${existingKeywords} ${location}` 
+      const locationKeywords = existingKeywords
+        ? `${existingKeywords} ${location}`
         : location;
       params.set('keywords', locationKeywords);
     }
@@ -440,10 +449,10 @@ class LinkedInPeopleSearchScraper {
   private addNetworkToParams(params: URLSearchParams, filters: SearchFilters): void {
     if (filters.network) {
       const network = filters.network.toUpperCase();
-      
+
       // Map network codes to LinkedIn's network filter values
       let networkValue: string | null = null;
-      
+
       switch (network) {
         case 'F':
           networkValue = 'F'; // First-degree connections
@@ -458,7 +467,7 @@ class LinkedInPeopleSearchScraper {
           console.log(`⚠️  Invalid network filter: ${filters.network}. Valid options: F (1st degree), S (2nd degree), O (3rd+ degree)`);
           return;
       }
-      
+
       if (networkValue) {
         params.append('origin', 'FACETED_SEARCH');
         params.append('network', `["${networkValue}"]`);
@@ -622,25 +631,25 @@ EXAMPLES:
 // Main execution function
 async function main() {
   const scraper = new LinkedInPeopleSearchScraper();
-  
+
   try {
     // Parse command line arguments
     const filters = parseArguments();
-    
+
     // If no filters provided, show help
     if (Object.keys(filters).length === 0) {
       showHelp();
       return;
     }
-    
+
     console.log('🚀 Starting LinkedIn People Search Scraper...');
     console.log('📝 Search Filters:', JSON.stringify(filters, null, 2));
-    
+
     await scraper.init();
     const profiles = await scraper.searchPeople(filters);
-    
+
     scraper.displayResults(profiles);
-    
+
   } catch (error) {
     console.error('❌ Error:', error);
   } finally {
