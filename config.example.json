@@ -1,0 +1,11 @@
+{
+  "linkedin": {
+    "email": "your-email@example.com",
+    "password": "your-password"
+  },
+  "browser": {
+    "headless": false,
+    "slowMo": 1000,
+    "cookiesPath": "./cookies.json"
+  }
+}

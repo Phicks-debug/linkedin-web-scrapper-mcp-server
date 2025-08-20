@@ -4,6 +4,10 @@
   "description": "linkedin profile scrapper",
   "main": "index.ts",
   "scripts": {
+    "build": "tsc",
+    "start": "npm run build && node dist/index.js",
+    "dev": "ts-node index.ts",
+    "search": "npm run build && node dist/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -17,6 +21,12 @@
   },
   "homepage": "https://github.com/Phicks-debug/linkedin-web-scrapper#readme",
   "dependencies": {
-    "@playwright/test": "^1.54.2"
+    "@playwright/test": "^1.54.2",
+    "@types/node": "^24.3.0",
+    "playwright": "^1.54.2",
+    "typescript": "^5.9.2"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2"
   }
 }
