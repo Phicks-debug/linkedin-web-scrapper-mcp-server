@@ -1,0 +1,24 @@
+services:
+  linkedin-web-scraper-mcp-sever:
+    build: .
+    container_name: linkedin-mcp
+    environment:
+      - NODE_ENV=production
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+      - DISPLAY=:99
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+
+    # Add memory limits for stability
+    mem_limit: 2g
+    memswap_limit: 2g
+
+    # Add shared memory size for Chrome
+    shm_size: 2gb
+
+    # Network mode for better performance
+    network_mode: bridge
+
+    # Restart policy
+    restart: unless-stopped
