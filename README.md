@@ -1,23 +1,23 @@
-# LinkedIn Web Scraper
+# LinkedIn Web Scraper MCP Server
 
-A TypeScript-based web scraper that searches for LinkedIn profiles and extracts profile links from search results.
+A Model Context Protocol (MCP) server that provides LinkedIn web scraping capabilities as tools for AI assistants. This server uses Playwright to automate LinkedIn people search and extract profile information, exposing these capabilities through the MCP protocol.
 
 ## Features
 
-- **Automated Login**: Automatically logs into LinkedIn using your credentials
-- **Session Persistence**: Saves and reuses cookies to avoid repeated logins
-- **Keyword Search**: Search for LinkedIn profiles using custom keywords
-- **Profile Extraction**: Extracts profile names, URLs, and headlines
-- **Security Challenge Handling**: Handles LinkedIn security challenges with user assistance
-- **Adaptive Selectors**: Supports multiple profile card selectors (adapts to LinkedIn UI changes)
-- **Clean Output**: Structured console output with emojis for better readability
+- **MCP Tool Integration**: Exposes LinkedIn scraping as MCP tools for AI assistants
+- **People Search**: Search LinkedIn profiles using keywords, location, and network filters
+- **Profile Extraction**: Extract profile names, URLs, and headlines from search results
+- **Session Management**: Automatic LinkedIn login with cookie persistence
+- **Adaptive Selectors**: Handles LinkedIn UI changes with multiple CSS selector strategies
+- **Network Filtering**: Filter by connection degree (1st, 2nd, 3rd+ connections)
+- **Location Support**: Filter by location using LinkedIn's geoUrn codes or location strings
 
 ## Installation
 
 1. Clone the repository:
 ```bash
 git clone https://github.com/Phicks-debug/linkedin-web-scrapper.git
-cd linkedin-web-scrapper
+cd linkedin-web-scrapper-mcp-server
 ```
 
 2. Install dependencies:
@@ -34,114 +34,187 @@ npx playwright install
 ```bash
 cp config.example.json config.json
 ```
-Then edit `config.json` with your LinkedIn email and password:
+Then edit `config.json` with your LinkedIn credentials:
 ```json
 {
   "linkedin": {
     "email": "your-linkedin-email@email.com",
     "password": "your-linkedin-password"
+  },
+  "browser": {
+    "headless": false,
+    "slowMo": 1000,
+    "cookiesPath": "./cookies.json"
   }
 }
 ```
 
-## Usage
-
-### Method 1: Using npm scripts
-
-Search with default keyword ("software engineer"):
-```bash
-npm run search
-```
-
-Search with custom keywords:
-```bash
-npm run search "data scientist"
-```
-
-### Method 2: Direct execution
-
-Build and run:
+5. Build the server:
 ```bash
 npm run build
-node dist/index.js "product manager"
 ```
 
-Development mode:
+## Usage
+
+### As an MCP Server
+
+This server is designed to be used with MCP-compatible AI assistants. The server exposes LinkedIn scraping functionality through the MCP protocol.
+
+#### Starting the MCP Server
+
 ```bash
-npm run dev "frontend developer"
+# Start the server (connects via stdio)
+node dist/index.js
+
+# For development with auto-rebuild
+npm run watch
 ```
 
-## How it works
+#### Using MCP Inspector (Development)
 
-1. **Configuration Loading**: Reads LinkedIn credentials from `config.json`
-2. **Browser Launch**: Opens a Chrome browser instance using Playwright
-3. **Cookie Management**: Loads saved session cookies if available
-4. **Navigation**: Goes to LinkedIn people search URL with your keywords
-5. **Auto Login**: Automatically logs into LinkedIn if not already authenticated
-6. **Session Saving**: Saves cookies for future runs to avoid repeated logins
-7. **Profile Extraction**: Finds profile cards and extracts:
-   - Profile name
-   - LinkedIn profile URL
-   - Professional headline (if available)
-8. **Results Display**: Shows formatted results in the console with emojis
+Test the server using the MCP Inspector:
 
-## Example Output
-
-```
-🚀 Starting LinkedIn People Search Scraper...
-📝 Keywords: software engineer
-
-Searching for people with keywords: "software engineer"
-Navigating to: https://www.linkedin.com/search/results/people/?keywords=software%20engineer
-
-Found 10 profiles using selector: .reusable-search__result-container
-
-================================================================================
-FOUND 10 LINKEDIN PROFILES
-================================================================================
-
-1. John Doe
-   Profile: https://www.linkedin.com/in/johndoe
-   Headline: Senior Software Engineer at Tech Company
-
-2. Jane Smith
-   Profile: https://www.linkedin.com/in/janesmith
-   Headline: Full Stack Developer | React & Node.js Expert
-
-...
+```bash
+npm run inspector
 ```
 
-## Important Notes
+### Available MCP Tools
 
-- **Credentials**: Store your LinkedIn credentials in `config.json` (not tracked by git)
-- **Security Challenges**: LinkedIn may occasionally require security challenges - handle them manually when prompted
-- **Session Persistence**: Cookies are saved to avoid repeated logins
-- **Rate Limiting**: Be respectful of LinkedIn's terms of service and don't make too many requests
-- **Browser Window**: The script opens a visible browser window (not headless) to avoid detection
-- **Selectors**: The script uses multiple CSS selectors to adapt to LinkedIn's changing UI
+#### `search-linkedin-people`
 
-## Security
+Search for LinkedIn profiles using web scraping.
 
-- Your credentials are stored locally in `config.json` and never transmitted anywhere except to LinkedIn
-- Session cookies are saved locally in `cookies.json` for convenience
-- Both files are excluded from git tracking for security
+**Input Schema:**
+```json
+{
+  "keywords": "software engineer", // Required: Keywords to search for
+  "location": "105646813",        // Optional: Location filter (geoUrn or location string)
+  "network": "F"                  // Optional: Network degree filter
+}
+```
 
-## Technical Details
+**Network Filter Options:**
+- `"F"` - 1st degree connections only
+- `"S"` - 2nd degree connections
+- `"O"` - 3rd+ degree connections (out of network)
 
-- **Language**: TypeScript
-- **Browser Automation**: Playwright
-- **Target**: LinkedIn People Search (`https://www.linkedin.com/search/results/people/`)
-- **Output**: Console-based structured results
+**Location Examples:**
+- `"105646813"` - Spain (using LinkedIn geoUrn)
+- `"San Francisco"` - Location string
+- Default: `"104195383"` if not specified
 
-## Scripts
+**Response Format:**
+```json
+{
+  "success": true,
+  "count": 10,
+  "profiles": [
+    {
+      "name": "John Doe",
+      "profileUrl": "https://www.linkedin.com/in/johndoe",
+      "headline": "Senior Software Engineer at Tech Company"
+    }
+  ],
+  "filters": {
+    "keywords": "software engineer",
+    "location": "105646813",
+    "network": "F"
+  }
+}
+```
+
+## MCP Integration
+
+### Adding to Claude Desktop
+
+Add this server to your Claude Desktop MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "linkedin": {
+      "command": "node",
+      "args": ["/path/to/linkedin-web-scrapper-mcp-server/dist/index.js"],
+      "cwd": "/path/to/linkedin-web-scrapper-mcp-server"
+    }
+  }
+}
+```
+
+### Using with Other MCP Clients
+
+The server follows the standard MCP protocol and can be used with any MCP-compatible client by connecting to the stdio transport.
+
+## How It Works
+
+1. **MCP Protocol**: Exposes LinkedIn scraping as standardized MCP tools
+2. **Browser Automation**: Uses Playwright to control Chrome/Chromium browser
+3. **Session Persistence**: Saves LinkedIn session cookies to avoid repeated logins
+4. **People Search**: Navigates to LinkedIn people search with specified filters
+5. **Profile Extraction**: Extracts profile data using adaptive CSS selectors
+6. **Structured Output**: Returns JSON-formatted results via MCP protocol
+
+## Development
+
+### Scripts
 
 | Script | Description |
 |--------|-------------|
-| `npm run build` | Compile TypeScript to JavaScript |
-| `npm run start` | Build and run the compiled script |
-| `npm run dev` | Run directly with ts-node (development) |
-| `npm run search` | Build and run with default or provided keywords |
+| `npm run build` | Compile TypeScript and make executable |
+| `npm run watch` | Watch mode for development |
+| `npm run inspector` | Launch MCP Inspector for testing |
+| `npm run dev` | Build and run the server |
+
+### Project Structure
+
+```
+├── index.ts              # Main MCP server implementation
+├── config.json          # LinkedIn credentials and browser settings
+├── cookies.json          # Saved session cookies (auto-generated)
+├── package.json          # MCP server configuration
+└── dist/                 # Compiled JavaScript output
+```
+
+## Security & Privacy
+
+- **Local Credentials**: Your LinkedIn credentials are stored locally in `config.json`
+- **Session Cookies**: Saved locally in `cookies.json` for session persistence
+- **No Data Transmission**: No data is sent anywhere except to LinkedIn for scraping
+- **Browser Automation**: Uses a visible browser window to avoid detection
+
+## Technical Details
+
+- **Protocol**: Model Context Protocol (MCP) 0.6.0
+- **Runtime**: Node.js with TypeScript
+- **Browser Engine**: Playwright with Chromium
+- **Transport**: Standard I/O (stdio) for MCP communication
+- **Target**: LinkedIn People Search API
+
+## Error Handling
+
+The server handles common scenarios:
+- Automatic LinkedIn login when session expires
+- LinkedIn security challenges (requires manual intervention)
+- UI changes through adaptive selectors
+- Network timeouts and connection issues
+
+## Limitations
+
+- **LinkedIn Terms**: Use responsibly and respect LinkedIn's terms of service
+- **Rate Limiting**: Avoid excessive requests to prevent detection
+- **Manual Challenges**: Security challenges require manual completion
+- **UI Dependencies**: May need updates if LinkedIn significantly changes their UI
 
 ## License
 
 MIT License - see LICENSE file for details.
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test with MCP Inspector
+5. Submit a pull request
+
+For issues and feature requests, please use the GitHub issues page.
