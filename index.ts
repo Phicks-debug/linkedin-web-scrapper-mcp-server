@@ -272,24 +272,29 @@ class LinkedInPeopleSearchScraper {
     try {
       console.error('🔍 Looking for search results on the page...');
 
-      // Wait for search results to load with multiple possible selectors
+      // Wait longer for page to fully load
+      await this.page.waitForTimeout(8000);
+
+      // Updated selectors for current LinkedIn structure
       const searchSelectors = [
         '.search-results-container',
         '.search-results__list',
         '.reusable-search__result-container',
-        '[data-chameleon-result-urn]'
+        '[data-chameleon-result-urn]',
+        '.search-results__cluster',
+        '.scaffold-layout__content',
+        'main.scaffold-layout__main'
       ];
 
       let foundResults = false;
       for (const selector of searchSelectors) {
         try {
-          await this.page.waitForSelector(selector, { timeout: 15000 });
+          await this.page.waitForSelector(selector, { timeout: 10000 });
           console.error(`✅ Found search results using selector: ${selector}`);
           foundResults = true;
           break;
         } catch (e) {
           console.error(`⏳ Selector "${selector}" not found, trying next...`);
-          console.error(e)
         }
       }
 
@@ -299,11 +304,24 @@ class LinkedInPeopleSearchScraper {
         const currentUrl = this.page.url();
         console.error(`📄 Current page title: ${pageTitle}`);
         console.error(`🌐 Current URL: ${currentUrl}`);
+
+        // Take a screenshot for debugging
+        try {
+          await this.page.screenshot({ path: 'debug-search-page.png', fullPage: true });
+          console.error('📸 Debug screenshot saved as debug-search-page.png');
+        } catch (e) {
+          console.error('❌ Could not save debug screenshot');
+        }
       }
 
       const profileElements = await this.getProfileElements();
       if (profileElements.length === 0) {
         console.error('⚠️  No profile elements found. The page structure might have changed.');
+
+        // Log available elements for debugging
+        const bodyText = await this.page.textContent('body');
+        console.error('📝 Page content length:', bodyText?.length || 0);
+
         return [];
       }
 
@@ -330,17 +348,39 @@ class LinkedInPeopleSearchScraper {
   private async getProfileElements(): Promise<any[]> {
     if (!this.page) return [];
 
+    // Updated selectors for current LinkedIn structure (2024/2025)
     const profileSelectors = [
       '.reusable-search__result-container',
       '.search-result',
       '.entity-result',
-      '[data-chameleon-result-urn]'
+      '[data-chameleon-result-urn]',
+      '.search-results__cluster .entity-result',
+      '.search-results-container .entity-result',
+      'li[data-occludable-job-id]',
+      'li.reusable-search__result-container',
+      '.search-results .reusable-search__result-container'
     ];
 
     for (const selector of profileSelectors) {
       const elements = await this.page.$$(selector);
       if (elements && elements.length > 0) {
         console.error(`📋 Found ${elements.length} profiles using selector: ${selector}`);
+        return elements;
+      }
+    }
+
+    // If no elements found, try a more general approach
+    console.error('🔍 Trying general search result selectors...');
+    const generalSelectors = [
+      'li[class*="result"]',
+      'div[class*="result"]',
+      'ul.reusable-search__entity-result-list li'
+    ];
+
+    for (const selector of generalSelectors) {
+      const elements = await this.page.$$(selector);
+      if (elements && elements.length > 0) {
+        console.error(`📋 Found ${elements.length} general elements using selector: ${selector}`);
         return elements;
       }
     }
@@ -375,14 +415,22 @@ class LinkedInPeopleSearchScraper {
       'a[href*="/in/"]',
       '.app-aware-link[href*="/in/"]',
       '.search-result__result-link',
-      '[data-control-name="search_srp_result"]'
+      '[data-control-name="search_srp_result"]',
+      '.entity-result__title-text a',
+      'a[data-control-name="search_srp_result"]',
+      '.entity-result__title-text .app-aware-link',
+      'span[dir="ltr"] a[href*="/in/"]'
     ];
 
     for (const linkSelector of linkSelectors) {
-      const profileLink = await profileElement.$(linkSelector);
-      const href = await profileLink?.getAttribute('href');
-      if (href?.includes('/in/')) {
-        return this.cleanProfileUrl(href);
+      try {
+        const profileLink = await profileElement.$(linkSelector);
+        const href = await profileLink?.getAttribute('href');
+        if (href?.includes('/in/')) {
+          return this.cleanProfileUrl(href);
+        }
+      } catch (e) {
+        console.error(`❌ Error with selector ${linkSelector}:`, e);
       }
     }
 
@@ -406,16 +454,25 @@ class LinkedInPeopleSearchScraper {
       '.entity-result__title-text a span[aria-hidden="true"]',
       '.search-result__result-link span[aria-hidden="true"]',
       '.actor-name',
-      '.search-result__result-link'
+      '.search-result__result-link',
+      '.entity-result__title-text .app-aware-link span[aria-hidden="true"]',
+      '.entity-result__title-text span[dir="ltr"] span[aria-hidden="true"]',
+      'span[dir="ltr"] > span[aria-hidden="true"]',
+      '.entity-result__title-text a',
+      '.entity-result__title-text'
     ];
 
     for (const nameSelector of nameSelectors) {
-      const nameElement = await profileElement.$(nameSelector);
-      if (nameElement) {
-        const name = await nameElement.textContent() || '';
-        if (name.trim()) {
-          return name.trim();
+      try {
+        const nameElement = await profileElement.$(nameSelector);
+        if (nameElement) {
+          const name = await nameElement.textContent() || '';
+          if (name.trim()) {
+            return name.trim();
+          }
         }
+      } catch (e) {
+        console.error(`❌ Error with name selector ${nameSelector}:`, e);
       }
     }
 
