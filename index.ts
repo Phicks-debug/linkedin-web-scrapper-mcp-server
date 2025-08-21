@@ -83,6 +83,52 @@ class LinkedInPeopleSearchScraper {
     this.config = this.loadConfig();
   }
 
+  private async waitForDynamicContent(selector: string, timeout: number = 30000): Promise<boolean> {
+    if (!this.page) return false;
+
+    try {
+      await this.page.waitForSelector(selector, { timeout, state: 'visible' });
+      // Additional wait for content to stabilize
+      await this.page.waitForTimeout(2000);
+      return true;
+    } catch (e) {
+      console.error(`⏰ Timeout waiting for selector: ${selector}`);
+      return false;
+    }
+  }
+
+  private async waitForNetworkIdle(): Promise<void> {
+    if (!this.page) return;
+
+    try {
+      // Wait for network to be idle (no requests for 2 seconds)
+      await this.page.waitForLoadState('networkidle', { timeout: 30000 });
+      console.error('✅ Network idle achieved');
+    } catch (e) {
+      console.error('⏰ Network idle timeout');
+    }
+  }
+
+  private async waitForContentStabilization(): Promise<void> {
+    if (!this.page) return;
+
+    try {
+      // Wait for page to be fully loaded
+      await this.page.waitForLoadState('domcontentloaded');
+      await this.page.waitForTimeout(5000);
+
+      // Wait for any lazy-loaded content
+      await this.waitForNetworkIdle();
+
+      // Additional stabilization time
+      await this.page.waitForTimeout(3000);
+
+      console.error('✅ Content stabilization complete');
+    } catch (e) {
+      console.error('❌ Error during content stabilization:', e);
+    }
+  }
+
   private loadConfig(): Config {
     // Try to load from environment variables first (for Docker/containerized environments)
     const envEmail = process.env.LINKEDIN_EMAIL;
@@ -95,7 +141,7 @@ class LinkedInPeopleSearchScraper {
           password: envPassword
         },
         browser: {
-          headless: true,
+          headless: false,
           slowMo: 1000,
           cookiesPath: "./cookies.json"
         }
@@ -622,12 +668,43 @@ class LinkedInPeopleSearchScraper {
     }
 
     try {
-      // Add debugging screenshot
+      console.error('🔄 Starting comprehensive content stabilization...');
+
+      // Wait for content to fully stabilize
+      await this.waitForContentStabilization();
+
+      // Try to scroll down to trigger lazy loading
+      console.error('📜 Scrolling to trigger lazy content loading...');
+      await this.page.evaluate('window.scrollTo(0, document.body.scrollHeight / 2)');
+      await this.page.waitForTimeout(3000);
+
+      await this.page.evaluate('window.scrollTo(0, document.body.scrollHeight)');
+      await this.page.waitForTimeout(3000);
+
+      // Scroll back to top
+      await this.page.evaluate('window.scrollTo(0, 0)');
+      await this.page.waitForTimeout(2000);
+
+      // Wait for any dynamic content that might have loaded
+      await this.waitForNetworkIdle();
+
+      // Add debugging screenshot with absolute path
       try {
-        await this.page.screenshot({ path: 'debug-profile-page.png', fullPage: true });
-        console.error('📸 Debug profile screenshot saved as debug-profile-page.png');
+        const screenshotPath = path.join(process.cwd(), 'debug-profile-page.png');
+        await this.page.screenshot({ path: screenshotPath, fullPage: true });
+        console.error(`📸 Debug profile screenshot saved as ${screenshotPath}`);
       } catch (e) {
-        console.error('❌ Could not save profile debug screenshot');
+        console.error('❌ Could not save profile debug screenshot:', e);
+      }
+
+      // Log page HTML for analysis
+      try {
+        const pageHTML = await this.page.content();
+        const htmlPath = path.join(process.cwd(), 'debug-profile-page.html');
+        fs.writeFileSync(htmlPath, pageHTML);
+        console.error(`💾 Debug profile HTML saved as ${htmlPath}`);
+      } catch (e) {
+        console.error('❌ Could not save profile debug HTML:', e);
       }
 
       // Log page title and URL for debugging
@@ -639,22 +716,29 @@ class LinkedInPeopleSearchScraper {
       // Debug: Log page structure for analysis
       await this.debugPageStructure();
 
+      // Wait for main profile sections to be available
+      const mainSectionSelectors = [
+        '.artdeco-card.pv-profile-card',
+        '.pv-profile-section',
+        'main section'
+      ];
+
+      for (const selector of mainSectionSelectors) {
+        await this.waitForDynamicContent(selector, 15000);
+      }
+
       // Extract basic profile information
       const name = await this.extractProfileNameFromPage();
       const headline = await this.extractProfileHeadlineFromPage();
       const location = await this.extractProfileLocation();
       const about = await this.extractProfileAbout();
 
-      // Extract experience
+      // Extract detailed sections with better timing
+      console.error('🔍 Starting detailed section extraction...');
+
       const experience = await this.extractProfileExperience();
-
-      // Extract education
       const education = await this.extractProfileEducation();
-
-      // Extract skills
       const skills = await this.extractProfileSkills();
-
-      // Extract licenses & certifications
       const licenses = await this.extractProfileLicenses();
 
       console.error(`🎯 Extracted profile data: name="${name}", headline="${headline}", location="${location}"`);
