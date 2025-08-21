@@ -636,6 +636,9 @@ class LinkedInPeopleSearchScraper {
       console.error(`📄 Profile page title: ${pageTitle}`);
       console.error(`🌐 Profile URL: ${currentUrl}`);
 
+      // Debug: Log page structure for analysis
+      await this.debugPageStructure();
+
       // Extract basic profile information
       const name = await this.extractProfileNameFromPage();
       const headline = await this.extractProfileHeadlineFromPage();
@@ -675,6 +678,51 @@ class LinkedInPeopleSearchScraper {
         name: 'Unknown',
         profileUrl
       };
+    }
+  }
+
+  private async debugPageStructure(): Promise<void> {
+    if (!this.page) return;
+
+    try {
+      console.error('🔍 DEBUG: Analyzing page structure...');
+
+      // Check for main content areas
+      const mainSelectors = ['main', '.scaffold-layout__main', '.profile', '#profile-content'];
+      for (const selector of mainSelectors) {
+        const element = await this.page.$(selector);
+        if (element) {
+          console.error(`✅ Found main content: ${selector}`);
+        }
+      }
+
+      // Look for section containers
+      const sections = await this.page.$$('section');
+      console.error(`📋 Found ${sections.length} section elements`);
+
+      for (let i = 0; i < Math.min(sections.length, 10); i++) {
+        const section = sections[i];
+        const id = await section.getAttribute('id');
+        const className = await section.getAttribute('class');
+        const dataSection = await section.getAttribute('data-section');
+        const textContent = await section.textContent();
+        const preview = textContent?.substring(0, 100) || '';
+
+        console.error(`📄 Section ${i}: id="${id}", class="${className}", data-section="${dataSection}"`);
+        console.error(`   Preview: ${preview}`);
+      }
+
+      // Look for common profile cards/containers
+      const cardSelectors = ['.artdeco-card', '.pv-profile-card', '.profile-section', '[class*="card"]'];
+      for (const selector of cardSelectors) {
+        const elements = await this.page.$$(selector);
+        if (elements.length > 0) {
+          console.error(`🎴 Found ${elements.length} elements matching ${selector}`);
+        }
+      }
+
+    } catch (e) {
+      console.error('❌ Error in debug analysis:', e);
     }
   }
 
@@ -808,72 +856,123 @@ class LinkedInPeopleSearchScraper {
     if (!this.page) return [];
 
     try {
-      // Try to expand experience section if collapsed - modern selectors
-      const expExpandButtons = [
-        'button[aria-label*="experience"]',
-        'section[data-section="experience"] button[aria-expanded="false"]',
-        '#experience-section button',
-        '.artdeco-card .pv-profile-section button'
+      console.error('🔍 DEBUG: Looking for experience section...');
+
+      // Look for experience section using various selectors
+      const experienceSectionSelectors = [
+        'section[data-field="experience"]',
+        'section#experience',
+        'div[data-section="experience"]',
+        '.artdeco-card.pv-profile-card:has(.pvs-header):has-text("Experience")',
+        '.pv-profile-section[data-section="experience"]',
+        '.experience-section',
+        'section.artdeco-card.break-words'
       ];
 
-      for (const buttonSelector of expExpandButtons) {
+      let experienceSection = null;
+      for (const selector of experienceSectionSelectors) {
         try {
-          const expExpandButton = await this.page.$(buttonSelector);
-          if (expExpandButton) {
-            await expExpandButton.click();
-            await this.page.waitForTimeout(1000);
-            break;
-          }
-        } catch (e) {
-          // Continue to next button selector
-        }
-      }
-
-      const experienceSelectors = [
-        // Modern LinkedIn experience selectors
-        'section[data-section="experience"] .artdeco-card .pvs-list__item--line-separated',
-        '.artdeco-card.pv-profile-card .pvs-list__item--line-separated',
-        '#experience-section .pvs-list__item--line-separated',
-        '.pv-profile-section[data-section="experience"] .pvs-list__item--line-separated',
-        '.pv-experience-section .pvs-list__item--line-separated',
-        '.pv-experience-section .pv-profile-section__list-item',
-        '#experience .pv-profile-section__list-item'
-      ];
-
-      for (const selector of experienceSelectors) {
-        const experienceElements = await this.page.$$(selector);
-        if (experienceElements.length > 0) {
-          console.error(`✅ Found ${experienceElements.length} experience elements using selector: ${selector}`);
-          const experiences = [];
-
-          for (const expElement of experienceElements) {
-            try {
-              const title = await this.extractExperienceTitle(expElement);
-              const company = await this.extractExperienceCompany(expElement);
-              const duration = await this.extractExperienceDuration(expElement);
-              const description = await this.extractExperienceDescription(expElement);
-
-              if (title || company) {
-                experiences.push({
-                  title: title || 'Unknown Title',
-                  company: company || 'Unknown Company',
-                  duration: duration || 'Unknown Duration',
-                  description
-                });
-              }
-            } catch (e) {
-              console.error('❌ Error extracting individual experience:', e);
+          const sections = await this.page.$$(selector);
+          for (const section of sections) {
+            const textContent = await section.textContent();
+            if (textContent?.toLowerCase().includes('experience')) {
+              console.error(`✅ Found experience section using selector: ${selector}`);
+              experienceSection = section;
+              break;
             }
           }
-
-          return experiences;
+          if (experienceSection) break;
+        } catch (e) {
+          console.error(`❌ Error with selector ${selector}:`, e);
         }
       }
+
+      if (!experienceSection) {
+        // Fallback: search all artdeco-card elements
+        const allCards = await this.page.$$('.artdeco-card.pv-profile-card.break-words.mt2, .artdeco-card.pv-profile-card, .artdeco-card');
+        for (const card of allCards) {
+          const textContent = await card.textContent();
+          if (textContent?.toLowerCase().includes('experience')) {
+            console.error('✅ Found experience section using fallback artdeco-card search');
+            experienceSection = card;
+            break;
+          }
+        }
+      }
+
+      if (!experienceSection) {
+        console.error('⚠️ No experience section found');
+        return [];
+      }
+
+      // Try to expand experience section if collapsed
+      try {
+        const expandButton = await experienceSection.$('button[aria-expanded="false"]');
+        if (expandButton) {
+          await expandButton.click();
+          await this.page.waitForTimeout(1000);
+          console.error('✅ Expanded experience section');
+        }
+      } catch (e) {
+        console.error('No expand button found or already expanded');
+      }
+
+      // Look for experience items within the section
+      const experienceItemSelectors = [
+        '.pvs-list__item--line-separated',
+        '.pvs-list__item',
+        '.pv-entity__summary-info',
+        '.pv-profile-section__list-item',
+        'li[class*="pvs-list"]',
+        'div[class*="pvs-entity"]'
+      ];
+
+      let experienceElements: any[] = [];
+      for (const selector of experienceItemSelectors) {
+        experienceElements = await experienceSection.$$(selector);
+        if (experienceElements.length > 0) {
+          console.error(`✅ Found ${experienceElements.length} experience items using selector: ${selector}`);
+          break;
+        }
+      }
+
+      if (experienceElements.length === 0) {
+        console.error('⚠️ No experience items found');
+        return [];
+      }
+
+      const experiences = [];
+      for (let i = 0; i < experienceElements.length; i++) {
+        const expElement = experienceElements[i];
+        try {
+          console.error(`🔍 Processing experience item ${i + 1}/${experienceElements.length}`);
+
+          const title = await this.extractExperienceTitle(expElement);
+          const company = await this.extractExperienceCompany(expElement);
+          const duration = await this.extractExperienceDuration(expElement);
+          const description = await this.extractExperienceDescription(expElement);
+
+          if (title || company) {
+            experiences.push({
+              title: title || 'Unknown Title',
+              company: company || 'Unknown Company',
+              duration: duration || 'Unknown Duration',
+              description
+            });
+            console.error(`✅ Extracted experience: ${title} at ${company}`);
+          } else {
+            console.error(`⚠️ No title or company found for item ${i + 1}`);
+          }
+        } catch (e) {
+          console.error(`❌ Error extracting experience item ${i + 1}:`, e);
+        }
+      }
+
+      return experiences;
     } catch (e) {
       console.error('❌ Error extracting experience section:', e);
+      return [];
     }
-
-    return [];
   }
 
   private async extractExperienceTitle(expElement: any): Promise<string | undefined> {
@@ -982,70 +1081,121 @@ class LinkedInPeopleSearchScraper {
     if (!this.page) return [];
 
     try {
-      // Try to expand education section if collapsed
-      const eduExpandButtons = [
-        'button[aria-label*="education"]',
-        'section[data-section="education"] button[aria-expanded="false"]',
-        '#education-section button',
-        '.artdeco-card .pv-profile-section button'
+      console.error('🔍 DEBUG: Looking for education section...');
+
+      // Look for education section using various selectors
+      const educationSectionSelectors = [
+        'section[data-field="education"]',
+        'section#education',
+        'div[data-section="education"]',
+        '.artdeco-card.pv-profile-card:has(.pvs-header):has-text("Education")',
+        '.pv-profile-section[data-section="education"]',
+        '.education-section',
+        'section.artdeco-card.break-words'
       ];
 
-      for (const buttonSelector of eduExpandButtons) {
+      let educationSection = null;
+      for (const selector of educationSectionSelectors) {
         try {
-          const eduExpandButton = await this.page.$(buttonSelector);
-          if (eduExpandButton) {
-            await eduExpandButton.click();
-            await this.page.waitForTimeout(1000);
-            break;
-          }
-        } catch (e) {
-          // Continue to next button selector
-        }
-      }
-
-      const educationSelectors = [
-        // Modern LinkedIn education selectors
-        'section[data-section="education"] .artdeco-card .pvs-list__item--line-separated',
-        '.artdeco-card.pv-profile-card .pvs-list__item--line-separated',
-        '#education-section .pvs-list__item--line-separated',
-        '.pv-profile-section[data-section="education"] .pvs-list__item--line-separated',
-        '.pv-education-section .pvs-list__item--line-separated',
-        '.pv-education-section .pv-profile-section__list-item',
-        '#education .pv-profile-section__list-item'
-      ];
-
-      for (const selector of educationSelectors) {
-        const educationElements = await this.page.$$(selector);
-        if (educationElements.length > 0) {
-          console.error(`✅ Found ${educationElements.length} education elements using selector: ${selector}`);
-          const education = [];
-
-          for (const eduElement of educationElements) {
-            try {
-              const school = await this.extractEducationSchool(eduElement);
-              const degree = await this.extractEducationDegree(eduElement);
-              const years = await this.extractEducationYears(eduElement);
-
-              if (school) {
-                education.push({
-                  school,
-                  degree,
-                  years
-                });
-              }
-            } catch (e) {
-              console.error('❌ Error extracting individual education:', e);
+          const sections = await this.page.$$(selector);
+          for (const section of sections) {
+            const textContent = await section.textContent();
+            if (textContent?.toLowerCase().includes('education')) {
+              console.error(`✅ Found education section using selector: ${selector}`);
+              educationSection = section;
+              break;
             }
           }
-
-          return education;
+          if (educationSection) break;
+        } catch (e) {
+          console.error(`❌ Error with selector ${selector}:`, e);
         }
       }
+
+      if (!educationSection) {
+        // Fallback: search all artdeco-card elements
+        const allCards = await this.page.$$('.artdeco-card.pv-profile-card.break-words.mt2, .artdeco-card.pv-profile-card, .artdeco-card');
+        for (const card of allCards) {
+          const textContent = await card.textContent();
+          if (textContent?.toLowerCase().includes('education')) {
+            console.error('✅ Found education section using fallback artdeco-card search');
+            educationSection = card;
+            break;
+          }
+        }
+      }
+
+      if (!educationSection) {
+        console.error('⚠️ No education section found');
+        return [];
+      }
+
+      // Try to expand education section if collapsed
+      try {
+        const expandButton = await educationSection.$('button[aria-expanded="false"]');
+        if (expandButton) {
+          await expandButton.click();
+          await this.page.waitForTimeout(1000);
+          console.error('✅ Expanded education section');
+        }
+      } catch (e) {
+        console.error('No expand button found or already expanded');
+      }
+
+      // Look for education items within the section
+      const educationItemSelectors = [
+        '.pvs-list__item--line-separated',
+        '.pvs-list__item',
+        '.pv-entity__summary-info',
+        '.pv-profile-section__list-item',
+        'li[class*="pvs-list"]',
+        'div[class*="pvs-entity"]'
+      ];
+
+      let educationElements: any[] = [];
+      for (const selector of educationItemSelectors) {
+        educationElements = await educationSection.$$(selector);
+        if (educationElements.length > 0) {
+          console.error(`✅ Found ${educationElements.length} education items using selector: ${selector}`);
+          break;
+        }
+      }
+
+      if (educationElements.length === 0) {
+        console.error('⚠️ No education items found');
+        return [];
+      }
+
+      const education = [];
+      for (let i = 0; i < educationElements.length; i++) {
+        const eduElement = educationElements[i];
+        try {
+          console.error(`🔍 Processing education item ${i + 1}/${educationElements.length}`);
+
+          const school = await this.extractEducationSchool(eduElement);
+          const degree = await this.extractEducationDegree(eduElement);
+          const years = await this.extractEducationYears(eduElement);
+
+          if (school) {
+            education.push({
+              school,
+              degree,
+              years
+            });
+            console.error(`✅ Extracted education: ${school} - ${degree} (${years})`);
+          } else {
+            console.error(`⚠️ No school found for item ${i + 1}`);
+          }
+        } catch (e) {
+          console.error(`❌ Error extracting education item ${i + 1}:`, e);
+        }
+      }
+
+      return education;
     } catch (e) {
       console.error('❌ Error extracting education section:', e);
+      return [];
     }
-
-    return [];
   }
 
   private async extractEducationSchool(eduElement: any): Promise<string | undefined> {
@@ -1125,66 +1275,96 @@ class LinkedInPeopleSearchScraper {
     if (!this.page) return [];
 
     try {
-      await this.expandSkillsSection();
-      const skillElements = await this.getSkillElements();
+      console.error('🔍 DEBUG: Looking for skills section...');
 
-      if (skillElements.length > 0) {
-        return await this.extractSkillNamesFromElements(skillElements);
+      // Look for skills section using various selectors
+      const skillsSectionSelectors = [
+        'section[data-field="skills"]',
+        'section#skills',
+        'div[data-section="skills"]',
+        '.artdeco-card.pv-profile-card:has(.pvs-header):has-text("Skills")',
+        '.pv-profile-section[data-section="skills"]',
+        '.skills-section',
+        'section.artdeco-card.break-words'
+      ];
+
+      let skillsSection = null;
+      for (const selector of skillsSectionSelectors) {
+        try {
+          const sections = await this.page.$$(selector);
+          for (const section of sections) {
+            const textContent = await section.textContent();
+            if (textContent?.toLowerCase().includes('skills')) {
+              console.error(`✅ Found skills section using selector: ${selector}`);
+              skillsSection = section;
+              break;
+            }
+          }
+          if (skillsSection) break;
+        } catch (e) {
+          console.error(`❌ Error with selector ${selector}:`, e);
+        }
       }
-    } catch (e) {
-      console.error('❌ Error extracting skills section:', e);
-    }
 
-    return [];
-  }
+      if (!skillsSection) {
+        // Fallback: search all artdeco-card elements
+        const allCards = await this.page.$$('.artdeco-card.pv-profile-card.break-words.mt2, .artdeco-card.pv-profile-card, .artdeco-card');
+        for (const card of allCards) {
+          const textContent = await card.textContent();
+          if (textContent?.toLowerCase().includes('skills')) {
+            console.error('✅ Found skills section using fallback artdeco-card search');
+            skillsSection = card;
+            break;
+          }
+        }
+      }
 
-  private async expandSkillsSection(): Promise<void> {
-    if (!this.page) return;
+      if (!skillsSection) {
+        console.error('⚠️ No skills section found');
+        return [];
+      }
 
-    const skillsExpandButtons = [
-      'button[aria-label*="skills"]',
-      'section[data-section="skills"] button[aria-expanded="false"]',
-      '#skills-section button',
-      '.artdeco-card .pv-profile-section button'
-    ];
-
-    for (const buttonSelector of skillsExpandButtons) {
+      // Try to expand skills section if collapsed
       try {
-        const skillsExpandButton = await this.page.$(buttonSelector);
-        if (skillsExpandButton) {
-          await skillsExpandButton.click();
+        const expandButton = await skillsSection.$('button[aria-expanded="false"]');
+        if (expandButton) {
+          await expandButton.click();
           await this.page.waitForTimeout(1000);
-          break;
+          console.error('✅ Expanded skills section');
         }
       } catch (e) {
-        // Continue to next button selector
+        console.error('No expand button found or already expanded');
       }
-    }
-  }
 
-  private async getSkillElements(): Promise<any[]> {
-    if (!this.page) return [];
+      // Look for skill items within the section
+      const skillItemSelectors = [
+        '.pvs-list__item--line-separated',
+        '.pvs-list__item',
+        '.pv-skill-category-entity',
+        '.pv-profile-section__list-item',
+        'li[class*="pvs-list"]',
+        'div[class*="pvs-entity"]'
+      ];
 
-    const skillsSelectors = [
-      // Modern LinkedIn skills selectors
-      'section[data-section="skills"] .artdeco-card .pvs-list__item--line-separated',
-      '.artdeco-card.pv-profile-card .pvs-list__item--line-separated',
-      '#skills-section .pvs-list__item--line-separated',
-      '.pv-profile-section[data-section="skills"] .pvs-list__item--line-separated',
-      '.pv-skills-section .pvs-list__item--line-separated',
-      '.pv-skills-section .pv-skill-category-entity',
-      '#skills .pv-skill-category-entity'
-    ];
-
-    for (const selector of skillsSelectors) {
-      const skillElements = await this.page.$$(selector);
-      if (skillElements.length > 0) {
-        console.error(`✅ Found ${skillElements.length} skill elements using selector: ${selector}`);
-        return skillElements;
+      let skillElements: any[] = [];
+      for (const selector of skillItemSelectors) {
+        skillElements = await skillsSection.$$(selector);
+        if (skillElements.length > 0) {
+          console.error(`✅ Found ${skillElements.length} skill items using selector: ${selector}`);
+          break;
+        }
       }
-    }
 
-    return [];
+      if (skillElements.length === 0) {
+        console.error('⚠️ No skill items found');
+        return [];
+      }
+
+      return await this.extractSkillNamesFromElements(skillElements);
+    } catch (e) {
+      console.error('❌ Error extracting skills section:', e);
+      return [];
+    }
   }
 
   private async extractSkillNamesFromElements(skillElements: any[]): Promise<string[]> {
@@ -1230,75 +1410,126 @@ class LinkedInPeopleSearchScraper {
     if (!this.page) return [];
 
     try {
-      // Try to expand licenses & certifications section if collapsed
-      const licenseExpandButtons = [
-        'button[aria-label*="licenses"]',
-        'button[aria-label*="certifications"]',
-        'section[data-section="licenses_and_certifications"] button[aria-expanded="false"]',
-        '#licenses-section button',
-        '.artdeco-card .pv-profile-section button'
+      console.error('🔍 DEBUG: Looking for licenses & certifications section...');
+
+      // Look for licenses section using various selectors
+      const licensesSectionSelectors = [
+        'section[data-field="licenses_and_certifications"]',
+        'section#licenses',
+        'div[data-section="licenses_and_certifications"]',
+        '.artdeco-card.pv-profile-card:has(.pvs-header):has-text("Licenses")',
+        '.artdeco-card.pv-profile-card:has(.pvs-header):has-text("Certifications")',
+        '.pv-profile-section[data-section="licenses_and_certifications"]',
+        '.licenses-section',
+        '.certifications-section',
+        'section.artdeco-card.break-words'
       ];
 
-      for (const buttonSelector of licenseExpandButtons) {
+      let licensesSection = null;
+      for (const selector of licensesSectionSelectors) {
         try {
-          const licenseExpandButton = await this.page.$(buttonSelector);
-          if (licenseExpandButton) {
-            await licenseExpandButton.click();
-            await this.page.waitForTimeout(1000);
-            break;
-          }
-        } catch (e) {
-          // Continue to next button selector
-        }
-      }
-
-      const licenseSelectors = [
-        // Modern LinkedIn licenses & certifications selectors
-        'section[data-section="licenses_and_certifications"] .artdeco-card .pvs-list__item--line-separated',
-        '.artdeco-card.pv-profile-card .pvs-list__item--line-separated',
-        '#licenses-section .pvs-list__item--line-separated',
-        '.pv-profile-section[data-section="licenses_and_certifications"] .pvs-list__item--line-separated',
-        '.pv-certifications-section .pvs-list__item--line-separated',
-        '.pv-certifications-section .pv-profile-section__list-item',
-        '#licenses_and_certifications .pv-profile-section__list-item'
-      ];
-
-      for (const selector of licenseSelectors) {
-        const licenseElements = await this.page.$$(selector);
-        if (licenseElements.length > 0) {
-          console.error(`✅ Found ${licenseElements.length} license/certification elements using selector: ${selector}`);
-          const licenses = [];
-
-          for (const licenseElement of licenseElements) {
-            try {
-              const name = await this.extractLicenseName(licenseElement);
-              const issuer = await this.extractLicenseIssuer(licenseElement);
-              const issueDate = await this.extractLicenseIssueDate(licenseElement);
-              const expirationDate = await this.extractLicenseExpirationDate(licenseElement);
-              const credentialId = await this.extractLicenseCredentialId(licenseElement);
-
-              if (name && issuer) {
-                licenses.push({
-                  name,
-                  issuer,
-                  issueDate,
-                  expirationDate,
-                  credentialId
-                });
-              }
-            } catch (e) {
-              console.error('❌ Error extracting individual license/certification:', e);
+          const sections = await this.page.$$(selector);
+          for (const section of sections) {
+            const textContent = await section.textContent();
+            if (textContent?.toLowerCase().includes('licenses') || textContent?.toLowerCase().includes('certifications')) {
+              console.error(`✅ Found licenses section using selector: ${selector}`);
+              licensesSection = section;
+              break;
             }
           }
-
-          return licenses;
+          if (licensesSection) break;
+        } catch (e) {
+          console.error(`❌ Error with selector ${selector}:`, e);
         }
       }
+
+      if (!licensesSection) {
+        // Fallback: search all artdeco-card elements
+        const allCards = await this.page.$$('.artdeco-card.pv-profile-card.break-words.mt2, .artdeco-card.pv-profile-card, .artdeco-card');
+        for (const card of allCards) {
+          const textContent = await card.textContent();
+          if (textContent?.toLowerCase().includes('licenses') || textContent?.toLowerCase().includes('certifications')) {
+            console.error('✅ Found licenses section using fallback artdeco-card search');
+            licensesSection = card;
+            break;
+          }
+        }
+      }
+
+      if (!licensesSection) {
+        console.error('⚠️ No licenses & certifications section found');
+        return [];
+      }
+
+      // Try to expand licenses section if collapsed
+      try {
+        const expandButton = await licensesSection.$('button[aria-expanded="false"]');
+        if (expandButton) {
+          await expandButton.click();
+          await this.page.waitForTimeout(1000);
+          console.error('✅ Expanded licenses section');
+        }
+      } catch (e) {
+        console.error('No expand button found or already expanded');
+      }
+
+      // Look for license items within the section
+      const licenseItemSelectors = [
+        '.pvs-list__item--line-separated',
+        '.pvs-list__item',
+        '.pv-profile-section__list-item',
+        'li[class*="pvs-list"]',
+        'div[class*="pvs-entity"]'
+      ];
+
+      let licenseElements: any[] = [];
+      for (const selector of licenseItemSelectors) {
+        licenseElements = await licensesSection.$$(selector);
+        if (licenseElements.length > 0) {
+          console.error(`✅ Found ${licenseElements.length} license items using selector: ${selector}`);
+          break;
+        }
+      }
+
+      if (licenseElements.length === 0) {
+        console.error('⚠️ No license items found');
+        return [];
+      }
+
+      const licenses = [];
+      for (let i = 0; i < licenseElements.length; i++) {
+        const licenseElement = licenseElements[i];
+        try {
+          console.error(`🔍 Processing license item ${i + 1}/${licenseElements.length}`);
+
+          const name = await this.extractLicenseName(licenseElement);
+          const issuer = await this.extractLicenseIssuer(licenseElement);
+          const issueDate = await this.extractLicenseIssueDate(licenseElement);
+          const expirationDate = await this.extractLicenseExpirationDate(licenseElement);
+          const credentialId = await this.extractLicenseCredentialId(licenseElement);
+
+          if (name && issuer) {
+            licenses.push({
+              name,
+              issuer,
+              issueDate,
+              expirationDate,
+              credentialId
+            });
+            console.error(`✅ Extracted license: ${name} from ${issuer}`);
+          } else {
+            console.error(`⚠️ No name or issuer found for item ${i + 1}`);
+          }
+        } catch (e) {
+          console.error(`❌ Error extracting license item ${i + 1}:`, e);
+        }
+      }
+
+      return licenses;
     } catch (e) {
       console.error('❌ Error extracting licenses & certifications section:', e);
+      return [];
     }
-
-    return [];
   }
 
   private async extractLicenseName(licenseElement: any): Promise<string | undefined> {
