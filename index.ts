@@ -46,6 +46,13 @@ interface LinkedInProfile {
     years?: string;
   }>;
   skills?: string[];
+  licenses?: Array<{
+    name: string;
+    issuer: string;
+    issueDate?: string;
+    expirationDate?: string;
+    credentialId?: string;
+  }>;
   profileUrl: string;
 }
 
@@ -644,8 +651,11 @@ class LinkedInPeopleSearchScraper {
       // Extract skills
       const skills = await this.extractProfileSkills();
 
+      // Extract licenses & certifications
+      const licenses = await this.extractProfileLicenses();
+
       console.error(`🎯 Extracted profile data: name="${name}", headline="${headline}", location="${location}"`);
-      console.error(`📊 Experience: ${experience.length}, Education: ${education.length}, Skills: ${skills.length}`);
+      console.error(`📊 Experience: ${experience.length}, Education: ${education.length}, Skills: ${skills.length}, Licenses: ${licenses.length}`);
 
       return {
         name,
@@ -655,6 +665,7 @@ class LinkedInPeopleSearchScraper {
         experience,
         education,
         skills,
+        licenses,
         profileUrl
       };
     } catch (error) {
@@ -797,14 +808,34 @@ class LinkedInPeopleSearchScraper {
     if (!this.page) return [];
 
     try {
-      // Try to expand experience section if collapsed
-      const expExpandButton = await this.page.$('button[aria-label*="experience"]');
-      if (expExpandButton) {
-        await expExpandButton.click();
-        await this.page.waitForTimeout(1000);
+      // Try to expand experience section if collapsed - modern selectors
+      const expExpandButtons = [
+        'button[aria-label*="experience"]',
+        'section[data-section="experience"] button[aria-expanded="false"]',
+        '#experience-section button',
+        '.artdeco-card .pv-profile-section button'
+      ];
+
+      for (const buttonSelector of expExpandButtons) {
+        try {
+          const expExpandButton = await this.page.$(buttonSelector);
+          if (expExpandButton) {
+            await expExpandButton.click();
+            await this.page.waitForTimeout(1000);
+            break;
+          }
+        } catch (e) {
+          // Continue to next button selector
+        }
       }
 
       const experienceSelectors = [
+        // Modern LinkedIn experience selectors
+        'section[data-section="experience"] .artdeco-card .pvs-list__item--line-separated',
+        '.artdeco-card.pv-profile-card .pvs-list__item--line-separated',
+        '#experience-section .pvs-list__item--line-separated',
+        '.pv-profile-section[data-section="experience"] .pvs-list__item--line-separated',
+        '.pv-experience-section .pvs-list__item--line-separated',
         '.pv-experience-section .pv-profile-section__list-item',
         '#experience .pv-profile-section__list-item'
       ];
@@ -812,6 +843,7 @@ class LinkedInPeopleSearchScraper {
       for (const selector of experienceSelectors) {
         const experienceElements = await this.page.$$(selector);
         if (experienceElements.length > 0) {
+          console.error(`✅ Found ${experienceElements.length} experience elements using selector: ${selector}`);
           const experiences = [];
 
           for (const expElement of experienceElements) {
@@ -846,15 +878,25 @@ class LinkedInPeopleSearchScraper {
 
   private async extractExperienceTitle(expElement: any): Promise<string | undefined> {
     const titleSelectors = [
+      // Modern LinkedIn experience title selectors
+      '.mr1.t-bold span[aria-hidden="true"]',
+      '.pvs-entity__caption-wrapper .mr1.t-bold',
+      '.pvs-entity__caption-wrapper .t-bold',
       '.pv-entity__summary-info h3',
-      '.pv-entity__summary-info .t-16.t-black.t-bold'
+      '.pv-entity__summary-info .t-16.t-black.t-bold',
+      'span[aria-hidden="true"]:first-child'
     ];
 
     for (const selector of titleSelectors) {
-      const titleElement = await expElement.$(selector);
-      const title = await titleElement?.textContent();
-      if (title && title.trim()) {
-        return title.trim();
+      try {
+        const titleElement = await expElement.$(selector);
+        const title = await titleElement?.textContent();
+        if (title && title.trim()) {
+          console.error(`✅ Found experience title: ${title.trim()}`);
+          return title.trim();
+        }
+      } catch (e) {
+        console.error(`❌ Error with title selector ${selector}:`, e);
       }
     }
     return undefined;
@@ -862,15 +904,24 @@ class LinkedInPeopleSearchScraper {
 
   private async extractExperienceCompany(expElement: any): Promise<string | undefined> {
     const companySelectors = [
+      // Modern LinkedIn experience company selectors
+      '.pvs-entity__caption-wrapper .t-14.t-normal span[aria-hidden="true"]',
+      '.pvs-entity__caption-wrapper .t-14.t-normal',
       '.pv-entity__secondary-title',
-      '.pv-entity__summary-info .t-14.t-black.t-normal'
+      '.pv-entity__summary-info .t-14.t-black.t-normal',
+      '.t-14.t-normal span[aria-hidden="true"]'
     ];
 
     for (const selector of companySelectors) {
-      const companyElement = await expElement.$(selector);
-      const company = await companyElement?.textContent();
-      if (company && company.trim()) {
-        return company.trim();
+      try {
+        const companyElement = await expElement.$(selector);
+        const company = await companyElement?.textContent();
+        if (company && company.trim()) {
+          console.error(`✅ Found experience company: ${company.trim()}`);
+          return company.trim();
+        }
+      } catch (e) {
+        console.error(`❌ Error with company selector ${selector}:`, e);
       }
     }
     return undefined;
@@ -878,15 +929,24 @@ class LinkedInPeopleSearchScraper {
 
   private async extractExperienceDuration(expElement: any): Promise<string | undefined> {
     const durationSelectors = [
+      // Modern LinkedIn experience duration selectors
+      '.pvs-entity__caption-wrapper .t-14.t-normal.t-black--light span[aria-hidden="true"]',
+      '.pvs-entity__caption-wrapper .t-black--light',
       '.pv-entity__date-range',
-      '.pv-entity__summary-info .t-14.t-black--light'
+      '.pv-entity__summary-info .t-14.t-black--light',
+      '.t-14.t-black--light span[aria-hidden="true"]'
     ];
 
     for (const selector of durationSelectors) {
-      const durationElement = await expElement.$(selector);
-      const duration = await durationElement?.textContent();
-      if (duration && duration.trim()) {
-        return duration.trim();
+      try {
+        const durationElement = await expElement.$(selector);
+        const duration = await durationElement?.textContent();
+        if (duration && duration.trim()) {
+          console.error(`✅ Found experience duration: ${duration.trim()}`);
+          return duration.trim();
+        }
+      } catch (e) {
+        console.error(`❌ Error with duration selector ${selector}:`, e);
       }
     }
     return undefined;
@@ -894,15 +954,25 @@ class LinkedInPeopleSearchScraper {
 
   private async extractExperienceDescription(expElement: any): Promise<string | undefined> {
     const descSelectors = [
+      // Modern LinkedIn experience description selectors
+      '.pvs-list__item--with-top-padding .t-14.t-normal.t-black',
+      '.pvs-list__item--with-top-padding .inline-show-more-text',
+      '.pv-shared-text-with-see-more',
       '.pv-entity__description',
-      '.pv-entity__extra-details'
+      '.pv-entity__extra-details',
+      '.inline-show-more-text__text'
     ];
 
     for (const selector of descSelectors) {
-      const descElement = await expElement.$(selector);
-      const description = await descElement?.textContent();
-      if (description && description.trim()) {
-        return description.trim();
+      try {
+        const descElement = await expElement.$(selector);
+        const description = await descElement?.textContent();
+        if (description && description.trim()) {
+          console.error(`✅ Found experience description: ${description.trim().substring(0, 100)}...`);
+          return description.trim();
+        }
+      } catch (e) {
+        console.error(`❌ Error with description selector ${selector}:`, e);
       }
     }
     return undefined;
@@ -912,7 +982,34 @@ class LinkedInPeopleSearchScraper {
     if (!this.page) return [];
 
     try {
+      // Try to expand education section if collapsed
+      const eduExpandButtons = [
+        'button[aria-label*="education"]',
+        'section[data-section="education"] button[aria-expanded="false"]',
+        '#education-section button',
+        '.artdeco-card .pv-profile-section button'
+      ];
+
+      for (const buttonSelector of eduExpandButtons) {
+        try {
+          const eduExpandButton = await this.page.$(buttonSelector);
+          if (eduExpandButton) {
+            await eduExpandButton.click();
+            await this.page.waitForTimeout(1000);
+            break;
+          }
+        } catch (e) {
+          // Continue to next button selector
+        }
+      }
+
       const educationSelectors = [
+        // Modern LinkedIn education selectors
+        'section[data-section="education"] .artdeco-card .pvs-list__item--line-separated',
+        '.artdeco-card.pv-profile-card .pvs-list__item--line-separated',
+        '#education-section .pvs-list__item--line-separated',
+        '.pv-profile-section[data-section="education"] .pvs-list__item--line-separated',
+        '.pv-education-section .pvs-list__item--line-separated',
         '.pv-education-section .pv-profile-section__list-item',
         '#education .pv-profile-section__list-item'
       ];
@@ -920,6 +1017,7 @@ class LinkedInPeopleSearchScraper {
       for (const selector of educationSelectors) {
         const educationElements = await this.page.$$(selector);
         if (educationElements.length > 0) {
+          console.error(`✅ Found ${educationElements.length} education elements using selector: ${selector}`);
           const education = [];
 
           for (const eduElement of educationElements) {
@@ -951,39 +1049,73 @@ class LinkedInPeopleSearchScraper {
   }
 
   private async extractEducationSchool(eduElement: any): Promise<string | undefined> {
-    const schoolSelectors = ['.pv-entity__school-name'];
+    const schoolSelectors = [
+      // Modern LinkedIn education school selectors
+      '.mr1.t-bold span[aria-hidden="true"]',
+      '.pvs-entity__caption-wrapper .mr1.t-bold',
+      '.pvs-entity__caption-wrapper .t-bold',
+      '.pv-entity__school-name',
+      'span[aria-hidden="true"]:first-child'
+    ];
 
     for (const selector of schoolSelectors) {
-      const schoolElement = await eduElement.$(selector);
-      const school = await schoolElement?.textContent();
-      if (school && school.trim()) {
-        return school.trim();
+      try {
+        const schoolElement = await eduElement.$(selector);
+        const school = await schoolElement?.textContent();
+        if (school && school.trim()) {
+          console.error(`✅ Found education school: ${school.trim()}`);
+          return school.trim();
+        }
+      } catch (e) {
+        console.error(`❌ Error with school selector ${selector}:`, e);
       }
     }
     return undefined;
   }
 
   private async extractEducationDegree(eduElement: any): Promise<string | undefined> {
-    const degreeSelectors = ['.pv-entity__degree-name'];
+    const degreeSelectors = [
+      // Modern LinkedIn education degree selectors
+      '.pvs-entity__caption-wrapper .t-14.t-normal span[aria-hidden="true"]',
+      '.pvs-entity__caption-wrapper .t-14.t-normal',
+      '.pv-entity__degree-name',
+      '.t-14.t-normal span[aria-hidden="true"]'
+    ];
 
     for (const selector of degreeSelectors) {
-      const degreeElement = await eduElement.$(selector);
-      const degree = await degreeElement?.textContent();
-      if (degree && degree.trim()) {
-        return degree.trim();
+      try {
+        const degreeElement = await eduElement.$(selector);
+        const degree = await degreeElement?.textContent();
+        if (degree && degree.trim()) {
+          console.error(`✅ Found education degree: ${degree.trim()}`);
+          return degree.trim();
+        }
+      } catch (e) {
+        console.error(`❌ Error with degree selector ${selector}:`, e);
       }
     }
     return undefined;
   }
 
   private async extractEducationYears(eduElement: any): Promise<string | undefined> {
-    const yearsSelectors = ['.pv-entity__dates'];
+    const yearsSelectors = [
+      // Modern LinkedIn education years selectors
+      '.pvs-entity__caption-wrapper .t-14.t-normal.t-black--light span[aria-hidden="true"]',
+      '.pvs-entity__caption-wrapper .t-black--light',
+      '.pv-entity__dates',
+      '.t-14.t-black--light span[aria-hidden="true"]'
+    ];
 
     for (const selector of yearsSelectors) {
-      const yearsElement = await eduElement.$(selector);
-      const years = await yearsElement?.textContent();
-      if (years && years.trim()) {
-        return years.trim();
+      try {
+        const yearsElement = await eduElement.$(selector);
+        const years = await yearsElement?.textContent();
+        if (years && years.trim()) {
+          console.error(`✅ Found education years: ${years.trim()}`);
+          return years.trim();
+        }
+      } catch (e) {
+        console.error(`❌ Error with years selector ${selector}:`, e);
       }
     }
     return undefined;
@@ -1009,10 +1141,24 @@ class LinkedInPeopleSearchScraper {
   private async expandSkillsSection(): Promise<void> {
     if (!this.page) return;
 
-    const skillsExpandButton = await this.page.$('button[aria-label*="skills"]');
-    if (skillsExpandButton) {
-      await skillsExpandButton.click();
-      await this.page.waitForTimeout(1000);
+    const skillsExpandButtons = [
+      'button[aria-label*="skills"]',
+      'section[data-section="skills"] button[aria-expanded="false"]',
+      '#skills-section button',
+      '.artdeco-card .pv-profile-section button'
+    ];
+
+    for (const buttonSelector of skillsExpandButtons) {
+      try {
+        const skillsExpandButton = await this.page.$(buttonSelector);
+        if (skillsExpandButton) {
+          await skillsExpandButton.click();
+          await this.page.waitForTimeout(1000);
+          break;
+        }
+      } catch (e) {
+        // Continue to next button selector
+      }
     }
   }
 
@@ -1020,6 +1166,12 @@ class LinkedInPeopleSearchScraper {
     if (!this.page) return [];
 
     const skillsSelectors = [
+      // Modern LinkedIn skills selectors
+      'section[data-section="skills"] .artdeco-card .pvs-list__item--line-separated',
+      '.artdeco-card.pv-profile-card .pvs-list__item--line-separated',
+      '#skills-section .pvs-list__item--line-separated',
+      '.pv-profile-section[data-section="skills"] .pvs-list__item--line-separated',
+      '.pv-skills-section .pvs-list__item--line-separated',
       '.pv-skills-section .pv-skill-category-entity',
       '#skills .pv-skill-category-entity'
     ];
@@ -1027,6 +1179,7 @@ class LinkedInPeopleSearchScraper {
     for (const selector of skillsSelectors) {
       const skillElements = await this.page.$$(selector);
       if (skillElements.length > 0) {
+        console.error(`✅ Found ${skillElements.length} skill elements using selector: ${selector}`);
         return skillElements;
       }
     }
@@ -1039,8 +1192,30 @@ class LinkedInPeopleSearchScraper {
 
     for (const skillElement of skillElements) {
       try {
-        const skillName = await skillElement?.textContent?.();
+        // Modern LinkedIn skill name selectors
+        const skillNameSelectors = [
+          '.mr1.t-bold span[aria-hidden="true"]',
+          '.pvs-entity__caption-wrapper .mr1.t-bold',
+          '.pvs-entity__caption-wrapper .t-bold',
+          'span[aria-hidden="true"]:first-child',
+          '.pv-skill-category-entity__name'
+        ];
+
+        let skillName = null;
+        for (const nameSelector of skillNameSelectors) {
+          try {
+            const nameElement = await skillElement.$(nameSelector);
+            skillName = await nameElement?.textContent();
+            if (skillName && skillName.trim()) {
+              break;
+            }
+          } catch (e) {
+            // Continue to next selector
+          }
+        }
+
         if (skillName && skillName.trim()) {
+          console.error(`✅ Found skill: ${skillName.trim()}`);
           skills.push(skillName.trim());
         }
       } catch (e) {
@@ -1049,6 +1224,209 @@ class LinkedInPeopleSearchScraper {
     }
 
     return skills;
+  }
+
+  private async extractProfileLicenses(): Promise<Array<{ name: string, issuer: string, issueDate?: string, expirationDate?: string, credentialId?: string }>> {
+    if (!this.page) return [];
+
+    try {
+      // Try to expand licenses & certifications section if collapsed
+      const licenseExpandButtons = [
+        'button[aria-label*="licenses"]',
+        'button[aria-label*="certifications"]',
+        'section[data-section="licenses_and_certifications"] button[aria-expanded="false"]',
+        '#licenses-section button',
+        '.artdeco-card .pv-profile-section button'
+      ];
+
+      for (const buttonSelector of licenseExpandButtons) {
+        try {
+          const licenseExpandButton = await this.page.$(buttonSelector);
+          if (licenseExpandButton) {
+            await licenseExpandButton.click();
+            await this.page.waitForTimeout(1000);
+            break;
+          }
+        } catch (e) {
+          // Continue to next button selector
+        }
+      }
+
+      const licenseSelectors = [
+        // Modern LinkedIn licenses & certifications selectors
+        'section[data-section="licenses_and_certifications"] .artdeco-card .pvs-list__item--line-separated',
+        '.artdeco-card.pv-profile-card .pvs-list__item--line-separated',
+        '#licenses-section .pvs-list__item--line-separated',
+        '.pv-profile-section[data-section="licenses_and_certifications"] .pvs-list__item--line-separated',
+        '.pv-certifications-section .pvs-list__item--line-separated',
+        '.pv-certifications-section .pv-profile-section__list-item',
+        '#licenses_and_certifications .pv-profile-section__list-item'
+      ];
+
+      for (const selector of licenseSelectors) {
+        const licenseElements = await this.page.$$(selector);
+        if (licenseElements.length > 0) {
+          console.error(`✅ Found ${licenseElements.length} license/certification elements using selector: ${selector}`);
+          const licenses = [];
+
+          for (const licenseElement of licenseElements) {
+            try {
+              const name = await this.extractLicenseName(licenseElement);
+              const issuer = await this.extractLicenseIssuer(licenseElement);
+              const issueDate = await this.extractLicenseIssueDate(licenseElement);
+              const expirationDate = await this.extractLicenseExpirationDate(licenseElement);
+              const credentialId = await this.extractLicenseCredentialId(licenseElement);
+
+              if (name && issuer) {
+                licenses.push({
+                  name,
+                  issuer,
+                  issueDate,
+                  expirationDate,
+                  credentialId
+                });
+              }
+            } catch (e) {
+              console.error('❌ Error extracting individual license/certification:', e);
+            }
+          }
+
+          return licenses;
+        }
+      }
+    } catch (e) {
+      console.error('❌ Error extracting licenses & certifications section:', e);
+    }
+
+    return [];
+  }
+
+  private async extractLicenseName(licenseElement: any): Promise<string | undefined> {
+    const nameSelectors = [
+      // Modern LinkedIn license name selectors
+      '.mr1.t-bold span[aria-hidden="true"]',
+      '.pvs-entity__caption-wrapper .mr1.t-bold',
+      '.pvs-entity__caption-wrapper .t-bold',
+      'span[aria-hidden="true"]:first-child'
+    ];
+
+    for (const selector of nameSelectors) {
+      try {
+        const nameElement = await licenseElement.$(selector);
+        const name = await nameElement?.textContent();
+        if (name && name.trim()) {
+          console.error(`✅ Found license name: ${name.trim()}`);
+          return name.trim();
+        }
+      } catch (e) {
+        console.error(`❌ Error with license name selector ${selector}:`, e);
+      }
+    }
+    return undefined;
+  }
+
+  private async extractLicenseIssuer(licenseElement: any): Promise<string | undefined> {
+    const issuerSelectors = [
+      // Modern LinkedIn license issuer selectors
+      '.pvs-entity__caption-wrapper .t-14.t-normal span[aria-hidden="true"]',
+      '.pvs-entity__caption-wrapper .t-14.t-normal',
+      '.t-14.t-normal span[aria-hidden="true"]'
+    ];
+
+    for (const selector of issuerSelectors) {
+      try {
+        const issuerElement = await licenseElement.$(selector);
+        const issuer = await issuerElement?.textContent();
+        if (issuer && issuer.trim()) {
+          console.error(`✅ Found license issuer: ${issuer.trim()}`);
+          return issuer.trim();
+        }
+      } catch (e) {
+        console.error(`❌ Error with license issuer selector ${selector}:`, e);
+      }
+    }
+    return undefined;
+  }
+
+  private async extractLicenseIssueDate(licenseElement: any): Promise<string | undefined> {
+    const dateSelectors = [
+      // Modern LinkedIn license issue date selectors
+      '.pvs-entity__caption-wrapper .t-14.t-normal.t-black--light span[aria-hidden="true"]',
+      '.pvs-entity__caption-wrapper .t-black--light',
+      '.t-14.t-black--light span[aria-hidden="true"]'
+    ];
+
+    for (const selector of dateSelectors) {
+      try {
+        const dateElement = await licenseElement.$(selector);
+        const dateText = await dateElement?.textContent();
+        if (dateText && dateText.trim()) {
+          // Parse issue date from text like "Issued Jan 2023 · Expires Jan 2026"
+          const issuedMatch = dateText.match(/Issued\s+([^·]+)/i);
+          if (issuedMatch) {
+            console.error(`✅ Found license issue date: ${issuedMatch[1].trim()}`);
+            return issuedMatch[1].trim();
+          }
+        }
+      } catch (e) {
+        console.error(`❌ Error with license date selector ${selector}:`, e);
+      }
+    }
+    return undefined;
+  }
+
+  private async extractLicenseExpirationDate(licenseElement: any): Promise<string | undefined> {
+    const dateSelectors = [
+      // Modern LinkedIn license expiration date selectors
+      '.pvs-entity__caption-wrapper .t-14.t-normal.t-black--light span[aria-hidden="true"]',
+      '.pvs-entity__caption-wrapper .t-black--light',
+      '.t-14.t-black--light span[aria-hidden="true"]'
+    ];
+
+    for (const selector of dateSelectors) {
+      try {
+        const dateElement = await licenseElement.$(selector);
+        const dateText = await dateElement?.textContent();
+        if (dateText && dateText.trim()) {
+          // Parse expiration date from text like "Issued Jan 2023 · Expires Jan 2026"
+          const expiresMatch = dateText.match(/Expires\s+(.+)/i);
+          if (expiresMatch) {
+            console.error(`✅ Found license expiration date: ${expiresMatch[1].trim()}`);
+            return expiresMatch[1].trim();
+          }
+        }
+      } catch (e) {
+        console.error(`❌ Error with license expiration selector ${selector}:`, e);
+      }
+    }
+    return undefined;
+  }
+
+  private async extractLicenseCredentialId(licenseElement: any): Promise<string | undefined> {
+    const credentialSelectors = [
+      // Modern LinkedIn credential ID selectors
+      '.pvs-list__item--with-top-padding .t-14.t-normal.t-black',
+      '.pvs-list__item--with-top-padding .inline-show-more-text',
+      '.pv-shared-text-with-see-more'
+    ];
+
+    for (const selector of credentialSelectors) {
+      try {
+        const credentialElement = await licenseElement.$(selector);
+        const credentialText = await credentialElement?.textContent();
+        if (credentialText && credentialText.trim()) {
+          // Look for credential ID in text
+          const credentialMatch = credentialText.match(/Credential ID[:\s]+([^\n\r]+)/i);
+          if (credentialMatch) {
+            console.error(`✅ Found credential ID: ${credentialMatch[1].trim()}`);
+            return credentialMatch[1].trim();
+          }
+        }
+      } catch (e) {
+        console.error(`❌ Error with credential ID selector ${selector}:`, e);
+      }
+    }
+    return undefined;
   }
 
   async close(): Promise<void> {
@@ -1117,7 +1495,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "scrape-linkedin-profile",
-        description: "Scrape comprehensive data from a specific LinkedIn profile URL. Returns detailed profile information including experience, education, skills, and more.",
+        description: "Scrape comprehensive data from a specific LinkedIn profile URL. Returns detailed profile information including experience, education, skills, licenses & certifications, and more.",
         inputSchema: {
           type: "object",
           properties: {
