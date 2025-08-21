@@ -615,6 +615,20 @@ class LinkedInPeopleSearchScraper {
     }
 
     try {
+      // Add debugging screenshot
+      try {
+        await this.page.screenshot({ path: 'debug-profile-page.png', fullPage: true });
+        console.error('📸 Debug profile screenshot saved as debug-profile-page.png');
+      } catch (e) {
+        console.error('❌ Could not save profile debug screenshot');
+      }
+
+      // Log page title and URL for debugging
+      const pageTitle = await this.page.title();
+      const currentUrl = this.page.url();
+      console.error(`📄 Profile page title: ${pageTitle}`);
+      console.error(`🌐 Profile URL: ${currentUrl}`);
+
       // Extract basic profile information
       const name = await this.extractProfileNameFromPage();
       const headline = await this.extractProfileHeadlineFromPage();
@@ -629,6 +643,9 @@ class LinkedInPeopleSearchScraper {
 
       // Extract skills
       const skills = await this.extractProfileSkills();
+
+      console.error(`🎯 Extracted profile data: name="${name}", headline="${headline}", location="${location}"`);
+      console.error(`📊 Experience: ${experience.length}, Education: ${education.length}, Skills: ${skills.length}`);
 
       return {
         name,
@@ -654,10 +671,16 @@ class LinkedInPeopleSearchScraper {
     if (!this.page) return 'Unknown';
 
     const nameSelectors = [
+      'h1.text-heading-xlarge',
       '.pv-text-details__left-panel h1',
+      '.ph5.pb5 h1',
+      '.mt2 h1',
+      'main h1',
       '.pv-top-card--list-bullet .pv-text-details__left-panel h1',
       '.pv-top-card--list .pv-text-details__left-panel h1',
-      '.pv-top-card .pv-text-details__left-panel h1'
+      '.pv-top-card .pv-text-details__left-panel h1',
+      '[data-generated-suggestion-target]',
+      '.text-heading-xlarge.inline.t-24.v-align-middle.break-words'
     ];
 
     for (const selector of nameSelectors) {
@@ -665,6 +688,7 @@ class LinkedInPeopleSearchScraper {
         const nameElement = await this.page.$(selector);
         const name = await nameElement?.textContent();
         if (name && name.trim()) {
+          console.error(`✅ Found name using selector: ${selector} - "${name.trim()}"`);
           return name.trim();
         }
       } catch (e) {
@@ -679,10 +703,16 @@ class LinkedInPeopleSearchScraper {
     if (!this.page) return undefined;
 
     const headlineSelectors = [
+      '.text-body-medium.break-words',
       '.pv-text-details__left-panel .text-body-medium.break-words',
+      '.ph5.pb5 .text-body-medium',
+      '.mt2 .text-body-medium',
+      'main .text-body-medium.break-words',
       '.pv-top-card--list-bullet .text-body-medium.break-words',
       '.pv-top-card .pv-text-details__left-panel .text-body-medium',
-      '.pv-top-card--list .pv-text-details__left-panel .text-body-medium'
+      '.pv-top-card--list .pv-text-details__left-panel .text-body-medium',
+      '[data-generated-suggestion-target] + .text-body-medium',
+      '.text-body-medium.t-black'
     ];
 
     for (const selector of headlineSelectors) {
@@ -690,6 +720,7 @@ class LinkedInPeopleSearchScraper {
         const headlineElement = await this.page.$(selector);
         const headline = await headlineElement?.textContent();
         if (headline && headline.trim()) {
+          console.error(`✅ Found headline using selector: ${selector} - "${headline.trim()}"`);
           return headline.trim();
         }
       } catch (e) {
@@ -704,9 +735,15 @@ class LinkedInPeopleSearchScraper {
     if (!this.page) return undefined;
 
     const locationSelectors = [
+      '.text-body-small.inline.t-black--light.break-words',
       '.pv-text-details__left-panel .text-body-small.inline.t-black--light.break-words',
+      '.ph5.pb5 .text-body-small',
+      '.mt2 .text-body-small',
+      'main .text-body-small.inline.t-black--light',
       '.pv-top-card--list-bullet .text-body-small.inline.t-black--light.break-words',
-      '.pv-top-card .pv-text-details__left-panel .text-body-small.inline'
+      '.pv-top-card .pv-text-details__left-panel .text-body-small.inline',
+      '[data-generated-suggestion-target] + * .text-body-small',
+      '.text-body-small.t-black--light.break-words'
     ];
 
     for (const selector of locationSelectors) {
@@ -714,6 +751,7 @@ class LinkedInPeopleSearchScraper {
         const locationElement = await this.page.$(selector);
         const location = await locationElement?.textContent();
         if (location && location.trim()) {
+          console.error(`✅ Found location using selector: ${selector} - "${location.trim()}"`);
           return location.trim();
         }
       } catch (e) {
