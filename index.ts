@@ -898,42 +898,62 @@ class LinkedInPeopleSearchScraper {
     if (!this.page) return [];
 
     try {
-      // Try to expand skills section if collapsed
-      const skillsExpandButton = await this.page.$('button[aria-label*="skills"]');
-      if (skillsExpandButton) {
-        await skillsExpandButton.click();
-        await this.page.waitForTimeout(1000);
-      }
+      await this.expandSkillsSection();
+      const skillElements = await this.getSkillElements();
 
-      const skillsSelectors = [
-        '.pv-skills-section .pv-skill-category-entity',
-        '#skills .pv-skill-category-entity'
-      ];
-
-      for (const selector of skillsSelectors) {
-        const skillElements = await this.page.$$(selector);
-        if (skillElements.length > 0) {
-          const skills = [];
-
-          for (const skillElement of skillElements) {
-            try {
-              const skillName = await skillElement?.textContent();
-              if (skillName && skillName.trim()) {
-                skills.push(skillName.trim());
-              }
-            } catch (e) {
-              console.error('❌ Error extracting individual skill:', e);
-            }
-          }
-
-          return skills;
-        }
+      if (skillElements.length > 0) {
+        return await this.extractSkillNamesFromElements(skillElements);
       }
     } catch (e) {
       console.error('❌ Error extracting skills section:', e);
     }
 
     return [];
+  }
+
+  private async expandSkillsSection(): Promise<void> {
+    if (!this.page) return;
+
+    const skillsExpandButton = await this.page.$('button[aria-label*="skills"]');
+    if (skillsExpandButton) {
+      await skillsExpandButton.click();
+      await this.page.waitForTimeout(1000);
+    }
+  }
+
+  private async getSkillElements(): Promise<any[]> {
+    if (!this.page) return [];
+
+    const skillsSelectors = [
+      '.pv-skills-section .pv-skill-category-entity',
+      '#skills .pv-skill-category-entity'
+    ];
+
+    for (const selector of skillsSelectors) {
+      const skillElements = await this.page.$$(selector);
+      if (skillElements.length > 0) {
+        return skillElements;
+      }
+    }
+
+    return [];
+  }
+
+  private async extractSkillNamesFromElements(skillElements: any[]): Promise<string[]> {
+    const skills: string[] = [];
+
+    for (const skillElement of skillElements) {
+      try {
+        const skillName = await skillElement?.textContent?.();
+        if (skillName && skillName.trim()) {
+          skills.push(skillName.trim());
+        }
+      } catch (e) {
+        console.error('❌ Error extracting individual skill:', e);
+      }
+    }
+
+    return skills;
   }
 
   async close(): Promise<void> {
