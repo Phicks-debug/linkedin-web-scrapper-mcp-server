@@ -29,6 +29,26 @@ interface LinkedInProfileLink {
   headline?: string;
 }
 
+interface LinkedInProfile {
+  name: string;
+  headline?: string;
+  location?: string;
+  about?: string;
+  experience?: Array<{
+    title: string;
+    company: string;
+    duration: string;
+    description?: string;
+  }>;
+  education?: Array<{
+    school: string;
+    degree?: string;
+    years?: string;
+  }>;
+  skills?: string[];
+  profileUrl: string;
+}
+
 interface SearchFilters {
   keywords?: string;
   location?: string; // geoUrn - Uses LinkedIn's internal location codes, example: Spain = 105646813
@@ -488,6 +508,434 @@ class LinkedInPeopleSearchScraper {
     }
   }
 
+  async scrapeProfile(profileUrl: string): Promise<LinkedInProfile> {
+    if (!this.page) {
+      throw new Error('Browser not initialized. Call init() first.');
+    }
+
+    try {
+      console.error(`🔍 Scraping profile: ${profileUrl}`);
+
+      await this.page.goto(profileUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60000
+      });
+      await this.page.waitForTimeout(5000);
+
+      // Check if we need to log in
+      const loginRequired = await this.page.locator('input[name="session_key"]').isVisible();
+      if (loginRequired) {
+        console.error('🔑 Login required, attempting automatic login...');
+
+        const loginSuccess = await this.loginToLinkedIn();
+        if (!loginSuccess) {
+          throw new Error('Failed to log in to LinkedIn');
+        }
+
+        // Navigate to profile again after login
+        console.error('🔄 Redirecting to profile after login...');
+        await this.page.goto(profileUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: 60000
+        });
+        await this.page.waitForTimeout(5000);
+      }
+
+      // Extract profile information
+      const profileData = await this.extractProfileData(profileUrl);
+
+      return profileData;
+
+    } catch (error) {
+      console.error('❌ Error during profile scraping:', error);
+      throw error;
+    }
+  }
+
+  private async extractProfileData(profileUrl: string): Promise<LinkedInProfile> {
+    if (!this.page) {
+      throw new Error('Page not initialized');
+    }
+
+    try {
+      // Extract basic profile information
+      const name = await this.extractProfileNameFromPage();
+      const headline = await this.extractProfileHeadlineFromPage();
+      const location = await this.extractProfileLocation();
+      const about = await this.extractProfileAbout();
+
+      // Extract experience
+      const experience = await this.extractProfileExperience();
+
+      // Extract education
+      const education = await this.extractProfileEducation();
+
+      // Extract skills
+      const skills = await this.extractProfileSkills();
+
+      return {
+        name,
+        headline,
+        location,
+        about,
+        experience,
+        education,
+        skills,
+        profileUrl
+      };
+    } catch (error) {
+      console.error('❌ Error extracting profile data:', error);
+      // Return basic profile with available data
+      return {
+        name: 'Unknown',
+        profileUrl
+      };
+    }
+  }
+
+  private async extractProfileNameFromPage(): Promise<string> {
+    if (!this.page) return 'Unknown';
+
+    const nameSelectors = [
+      '.pv-text-details__left-panel h1',
+      '.pv-top-card--list-bullet .pv-text-details__left-panel h1',
+      '.pv-top-card--list .pv-text-details__left-panel h1',
+      '.pv-top-card .pv-text-details__left-panel h1'
+    ];
+
+    for (const selector of nameSelectors) {
+      try {
+        const nameElement = await this.page.$(selector);
+        const name = await nameElement?.textContent();
+        if (name && name.trim()) {
+          return name.trim();
+        }
+      } catch (e) {
+        console.error(`❌ Error extracting name with selector ${selector}:`, e);
+      }
+    }
+
+    return 'Unknown';
+  }
+
+  private async extractProfileHeadlineFromPage(): Promise<string | undefined> {
+    if (!this.page) return undefined;
+
+    const headlineSelectors = [
+      '.pv-text-details__left-panel .text-body-medium.break-words',
+      '.pv-top-card--list-bullet .text-body-medium.break-words',
+      '.pv-top-card .pv-text-details__left-panel .text-body-medium',
+      '.pv-top-card--list .pv-text-details__left-panel .text-body-medium'
+    ];
+
+    for (const selector of headlineSelectors) {
+      try {
+        const headlineElement = await this.page.$(selector);
+        const headline = await headlineElement?.textContent();
+        if (headline && headline.trim()) {
+          return headline.trim();
+        }
+      } catch (e) {
+        console.error(`❌ Error extracting headline with selector ${selector}:`, e);
+      }
+    }
+
+    return undefined;
+  }
+
+  private async extractProfileLocation(): Promise<string | undefined> {
+    if (!this.page) return undefined;
+
+    const locationSelectors = [
+      '.pv-text-details__left-panel .text-body-small.inline.t-black--light.break-words',
+      '.pv-top-card--list-bullet .text-body-small.inline.t-black--light.break-words',
+      '.pv-top-card .pv-text-details__left-panel .text-body-small.inline'
+    ];
+
+    for (const selector of locationSelectors) {
+      try {
+        const locationElement = await this.page.$(selector);
+        const location = await locationElement?.textContent();
+        if (location && location.trim()) {
+          return location.trim();
+        }
+      } catch (e) {
+        console.error(`❌ Error extracting location with selector ${selector}:`, e);
+      }
+    }
+
+    return undefined;
+  }
+
+  private async extractProfileAbout(): Promise<string | undefined> {
+    if (!this.page) return undefined;
+
+    try {
+      // Try to expand "About" section if it's collapsed
+      const aboutExpandButton = await this.page.$('button[aria-label="Show more about section"]');
+      if (aboutExpandButton) {
+        await aboutExpandButton.click();
+        await this.page.waitForTimeout(1000);
+      }
+
+      const aboutSelectors = [
+        '.pv-about-section .pv-shared-text-with-see-more',
+        '.pv-about__summary-text',
+        '#about .pv-shared-text-with-see-more'
+      ];
+
+      for (const selector of aboutSelectors) {
+        const aboutElement = await this.page.$(selector);
+        const about = await aboutElement?.textContent();
+        if (about && about.trim()) {
+          return about.trim();
+        }
+      }
+    } catch (e) {
+      console.error('❌ Error extracting about section:', e);
+    }
+
+    return undefined;
+  }
+
+  private async extractProfileExperience(): Promise<Array<{ title: string, company: string, duration: string, description?: string }>> {
+    if (!this.page) return [];
+
+    try {
+      // Try to expand experience section if collapsed
+      const expExpandButton = await this.page.$('button[aria-label*="experience"]');
+      if (expExpandButton) {
+        await expExpandButton.click();
+        await this.page.waitForTimeout(1000);
+      }
+
+      const experienceSelectors = [
+        '.pv-experience-section .pv-profile-section__list-item',
+        '#experience .pv-profile-section__list-item'
+      ];
+
+      for (const selector of experienceSelectors) {
+        const experienceElements = await this.page.$$(selector);
+        if (experienceElements.length > 0) {
+          const experiences = [];
+
+          for (const expElement of experienceElements) {
+            try {
+              const title = await this.extractExperienceTitle(expElement);
+              const company = await this.extractExperienceCompany(expElement);
+              const duration = await this.extractExperienceDuration(expElement);
+              const description = await this.extractExperienceDescription(expElement);
+
+              if (title || company) {
+                experiences.push({
+                  title: title || 'Unknown Title',
+                  company: company || 'Unknown Company',
+                  duration: duration || 'Unknown Duration',
+                  description
+                });
+              }
+            } catch (e) {
+              console.error('❌ Error extracting individual experience:', e);
+            }
+          }
+
+          return experiences;
+        }
+      }
+    } catch (e) {
+      console.error('❌ Error extracting experience section:', e);
+    }
+
+    return [];
+  }
+
+  private async extractExperienceTitle(expElement: any): Promise<string | undefined> {
+    const titleSelectors = [
+      '.pv-entity__summary-info h3',
+      '.pv-entity__summary-info .t-16.t-black.t-bold'
+    ];
+
+    for (const selector of titleSelectors) {
+      const titleElement = await expElement.$(selector);
+      const title = await titleElement?.textContent();
+      if (title && title.trim()) {
+        return title.trim();
+      }
+    }
+    return undefined;
+  }
+
+  private async extractExperienceCompany(expElement: any): Promise<string | undefined> {
+    const companySelectors = [
+      '.pv-entity__secondary-title',
+      '.pv-entity__summary-info .t-14.t-black.t-normal'
+    ];
+
+    for (const selector of companySelectors) {
+      const companyElement = await expElement.$(selector);
+      const company = await companyElement?.textContent();
+      if (company && company.trim()) {
+        return company.trim();
+      }
+    }
+    return undefined;
+  }
+
+  private async extractExperienceDuration(expElement: any): Promise<string | undefined> {
+    const durationSelectors = [
+      '.pv-entity__date-range',
+      '.pv-entity__summary-info .t-14.t-black--light'
+    ];
+
+    for (const selector of durationSelectors) {
+      const durationElement = await expElement.$(selector);
+      const duration = await durationElement?.textContent();
+      if (duration && duration.trim()) {
+        return duration.trim();
+      }
+    }
+    return undefined;
+  }
+
+  private async extractExperienceDescription(expElement: any): Promise<string | undefined> {
+    const descSelectors = [
+      '.pv-entity__description',
+      '.pv-entity__extra-details'
+    ];
+
+    for (const selector of descSelectors) {
+      const descElement = await expElement.$(selector);
+      const description = await descElement?.textContent();
+      if (description && description.trim()) {
+        return description.trim();
+      }
+    }
+    return undefined;
+  }
+
+  private async extractProfileEducation(): Promise<Array<{ school: string, degree?: string, years?: string }>> {
+    if (!this.page) return [];
+
+    try {
+      const educationSelectors = [
+        '.pv-education-section .pv-profile-section__list-item',
+        '#education .pv-profile-section__list-item'
+      ];
+
+      for (const selector of educationSelectors) {
+        const educationElements = await this.page.$$(selector);
+        if (educationElements.length > 0) {
+          const education = [];
+
+          for (const eduElement of educationElements) {
+            try {
+              const school = await this.extractEducationSchool(eduElement);
+              const degree = await this.extractEducationDegree(eduElement);
+              const years = await this.extractEducationYears(eduElement);
+
+              if (school) {
+                education.push({
+                  school,
+                  degree,
+                  years
+                });
+              }
+            } catch (e) {
+              console.error('❌ Error extracting individual education:', e);
+            }
+          }
+
+          return education;
+        }
+      }
+    } catch (e) {
+      console.error('❌ Error extracting education section:', e);
+    }
+
+    return [];
+  }
+
+  private async extractEducationSchool(eduElement: any): Promise<string | undefined> {
+    const schoolSelectors = ['.pv-entity__school-name'];
+
+    for (const selector of schoolSelectors) {
+      const schoolElement = await eduElement.$(selector);
+      const school = await schoolElement?.textContent();
+      if (school && school.trim()) {
+        return school.trim();
+      }
+    }
+    return undefined;
+  }
+
+  private async extractEducationDegree(eduElement: any): Promise<string | undefined> {
+    const degreeSelectors = ['.pv-entity__degree-name'];
+
+    for (const selector of degreeSelectors) {
+      const degreeElement = await eduElement.$(selector);
+      const degree = await degreeElement?.textContent();
+      if (degree && degree.trim()) {
+        return degree.trim();
+      }
+    }
+    return undefined;
+  }
+
+  private async extractEducationYears(eduElement: any): Promise<string | undefined> {
+    const yearsSelectors = ['.pv-entity__dates'];
+
+    for (const selector of yearsSelectors) {
+      const yearsElement = await eduElement.$(selector);
+      const years = await yearsElement?.textContent();
+      if (years && years.trim()) {
+        return years.trim();
+      }
+    }
+    return undefined;
+  }
+
+  private async extractProfileSkills(): Promise<string[]> {
+    if (!this.page) return [];
+
+    try {
+      // Try to expand skills section if collapsed
+      const skillsExpandButton = await this.page.$('button[aria-label*="skills"]');
+      if (skillsExpandButton) {
+        await skillsExpandButton.click();
+        await this.page.waitForTimeout(1000);
+      }
+
+      const skillsSelectors = [
+        '.pv-skills-section .pv-skill-category-entity',
+        '#skills .pv-skill-category-entity'
+      ];
+
+      for (const selector of skillsSelectors) {
+        const skillElements = await this.page.$$(selector);
+        if (skillElements.length > 0) {
+          const skills = [];
+
+          for (const skillElement of skillElements) {
+            try {
+              const skillName = await skillElement?.textContent();
+              if (skillName && skillName.trim()) {
+                skills.push(skillName.trim());
+              }
+            } catch (e) {
+              console.error('❌ Error extracting individual skill:', e);
+            }
+          }
+
+          return skills;
+        }
+      }
+    } catch (e) {
+      console.error('❌ Error extracting skills section:', e);
+    }
+
+    return [];
+  }
+
   async close(): Promise<void> {
     if (this.browser) {
       await this.browser.close();
@@ -551,6 +999,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             }
           }
         }
+      },
+      {
+        name: "scrape-linkedin-profile",
+        description: "Scrape comprehensive data from a specific LinkedIn profile URL. Returns detailed profile information including experience, education, skills, and more.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            profileUrl: {
+              type: "string",
+              description: "The LinkedIn profile URL to scrape (e.g., 'https://www.linkedin.com/in/username/')"
+            }
+          },
+          required: ["profileUrl"]
+        }
       }
     ]
   };
@@ -592,6 +1054,41 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new McpError(
           ErrorCode.InternalError,
           `LinkedIn search failed: ${error.message}`
+        );
+      }
+    }
+    else if (request.params.name == "scrape-linkedin-profile") {
+      const args = request.params.arguments || {};
+      const profileUrl = args.profileUrl as string;
+
+      if (!profileUrl) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `profileUrl is required for scrape-linkedin-profile tool`
+        );
+      }
+
+      console.error('🚀 Starting LinkedIn Profile Scrape...');
+      console.error('📝 Profile URL:', profileUrl);
+
+      try {
+        const scraperInstance = await initializeScraper();
+        const profile = await scraperInstance.scrapeProfile(profileUrl);
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              profile: profile
+            }, null, 2)
+          }]
+        };
+      } catch (error: any) {
+        console.error('❌ LinkedIn profile scrape error:', error);
+        throw new McpError(
+          ErrorCode.InternalError,
+          `LinkedIn profile scraping failed: ${error.message}`
         );
       }
     }
